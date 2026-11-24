@@ -240,7 +240,7 @@ object PomParser {
  * Pengelola library eksternal di filesDir/webify_sdk_repo/:
  *  1. Resolusi transitif Maven (Google Maven + Maven Central), versi tertinggi menang.
  *  2. Unduh & cache .aar/.jar + .pom.
- *  3. Ekstraksi AAR → classes.jar, libs/*.jar, res/, AndroidManifest.xml, assets/, jni/.
+ *  3. Ekstraksi AAR → classes.jar, libs/(semua .jar), res/, AndroidManifest.xml, assets/, jni/.
  *  4. Kompilasi resource tiap AAR dengan aapt2 (di-cache).
  */
 class AarDependencyManager(private val repoRoot: File, private val aapt2: Aapt2Wrapper) {
