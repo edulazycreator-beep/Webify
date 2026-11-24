@@ -15,7 +15,51 @@ import java.nio.file.Path
  */
 class D8CompilerWrapper(private val androidJar: File) {
 
-    fun dex(ws: Workspace, minSdk: Int, release: Boolean, log: BuildLogger, libraryJars: List<File> = emptyList()): List<File> {
+    /**
+     * Pre-dex library saja ke [outDir] (dipakai ulang lintas build lewat [BuildCache]).
+     */
+    fun dexLibraries(jars: List<File>, outDir: File, minSdk: Int, release: Boolean, log: BuildLogger) {
+        outDir.deleteRecursively(); outDir.mkdirs()
+        val handler = handler(log, mutableListOf())
+        log.info("d8: pre-dex ${jars.size} JAR library (sekali, lalu di-cache)…")
+        try {
+            D8.run(
+                D8Command.builder(handler)
+                    .addProgramFiles(jars.map { it.toPath() })
+                    .addLibraryFiles(androidJar.toPath())
+                    .setMinApiLevel(minSdk)
+                    .setMode(if (release) CompilationMode.RELEASE else CompilationMode.DEBUG)
+                    .setOutput(outDir.toPath(), OutputMode.DexIndexed)
+                    .build()
+            )
+        } catch (e: CompilationFailedException) {
+            throw BuildStageException(BuildStage.D8, "D8 (library) gagal: ${e.message}", e)
+        } catch (e: Throwable) {
+            throw BuildStageException(BuildStage.D8, "D8 (library) crash: ${e.javaClass.simpleName}: ${e.message}", e)
+        }
+    }
+
+    private fun handler(log: BuildLogger, errors: MutableList<String>) = object : DiagnosticsHandler {
+        override fun error(d: Diagnostic) {
+            val msg = describe(d)
+            errors += msg
+            log.error("[d8] $msg")
+        }
+        override fun warning(d: Diagnostic) { log.debug("[d8] ${describe(d)}") }
+        override fun info(d: Diagnostic) { log.debug("[d8] ${describe(d)}") }
+    }
+
+    /**
+     * @param preDexed file .dex hasil [dexLibraries]; bila diisi, [libraryJars] hanya dipakai sebagai classpath.
+     */
+    fun dex(
+        ws: Workspace,
+        minSdk: Int,
+        release: Boolean,
+        log: BuildLogger,
+        libraryJars: List<File> = emptyList(),
+        preDexed: List<File> = emptyList()
+    ): List<File> {
         val classFiles: List<Path> = ws.classes.walkTopDown()
             .filter { it.isFile && it.extension == "class" }
             .map { it.toPath() }
@@ -24,23 +68,21 @@ class D8CompilerWrapper(private val androidJar: File) {
         ws.dex.deleteRecursively(); ws.dex.mkdirs()
 
         val errors = mutableListOf<String>()
-        val handler = object : DiagnosticsHandler {
-            override fun error(d: Diagnostic) {
-                val msg = describe(d)
-                errors += msg
-                log.error("[d8] $msg")
-            }
-            override fun warning(d: Diagnostic) { log.warn("[d8] ${describe(d)}") }
-            override fun info(d: Diagnostic) { log.debug("[d8] ${describe(d)}") }
-        }
+        val handler = handler(log, errors)
 
         val mode = if (release) CompilationMode.RELEASE else CompilationMode.DEBUG
-        log.info("d8: ${classFiles.size} class" + (if (libraryJars.isNotEmpty()) " + ${libraryJars.size} JAR library" else "") +
+        log.info("d8: ${classFiles.size} class" +
+            (if (preDexed.isNotEmpty()) " + ${preDexed.size} DEX library (cache)" else if (libraryJars.isNotEmpty()) " + ${libraryJars.size} JAR library" else "") +
             " → DEX (mode=$mode, minApi=$minSdk, multi-dex otomatis)")
         try {
-            val command = D8Command.builder(handler)
-                .addProgramFiles(classFiles)
-                .addProgramFiles(libraryJars.map { it.toPath() })
+            val builder = D8Command.builder(handler).addProgramFiles(classFiles)
+            if (preDexed.isNotEmpty()) {
+                builder.addProgramFiles(preDexed.map { it.toPath() })
+                builder.addClasspathFiles(libraryJars.map { it.toPath() })
+            } else {
+                builder.addProgramFiles(libraryJars.map { it.toPath() })
+            }
+            val command = builder
                 .addLibraryFiles(androidJar.toPath())
                 .setMinApiLevel(minSdk)
                 .setMode(mode)

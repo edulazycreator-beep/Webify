@@ -7,7 +7,7 @@ import com.webify.app.domain.NativeConfigCodec
 /** Tahap 2: Menghasilkan AndroidManifest.xml aplikasi output secara dinamis. */
 object ManifestGenerator {
 
-    fun generate(p: WebProjectEntity, ws: Workspace, log: BuildLogger) {
+    fun generate(p: WebProjectEntity, ws: Workspace, log: BuildLogger, debugBuild: Boolean = false) {
         val perms = linkedSetOf("android.permission.INTERNET", "android.permission.ACCESS_NETWORK_STATE")
         val extraPermLines = mutableListOf<String>()
         if (p.permCamera) perms += "android.permission.CAMERA"
@@ -63,6 +63,11 @@ object ManifestGenerator {
             extraPermLines.forEach { appendLine("    $it") }
             features.forEach { appendLine("    $it") }
             appendLine()
+            if (debugBuild) {
+                // Laporan crash build debug dikirim ke Webify → perlu visibilitas paket
+                appendLine("""    <queries><package android:name="com.webify.app"/></queries>""")
+                appendLine()
+            }
             appendLine("""    <application""")
             appendLine("""        android:label="@string/app_name"""")
             appendLine("""        android:icon="@mipmap/ic_launcher"""")

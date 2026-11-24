@@ -15,6 +15,31 @@ import java.text.DecimalFormat
 
 object FileActions {
 
+    /** Info aplikasi terpasang (null bila belum terpasang). Webify mendeklarasikan <queries> MAIN/LAUNCHER. */
+    data class InstalledInfo(val versionName: String?, val versionCode: Long, val lastUpdate: Long)
+
+    fun installedInfo(context: Context, packageName: String): InstalledInfo? = try {
+        val pi = context.packageManager.getPackageInfo(packageName, 0)
+        @Suppress("DEPRECATION")
+        val code = if (Build.VERSION.SDK_INT >= 28) pi.longVersionCode else pi.versionCode.toLong()
+        InstalledInfo(pi.versionName, code, pi.lastUpdateTime)
+    } catch (_: Exception) { null }
+
+    /** Package name & versionCode dari file APK. */
+    fun apkInfo(context: Context, apk: File): Pair<String, Long>? = try {
+        context.packageManager.getPackageArchiveInfo(apk.absolutePath, 0)?.let { pi ->
+            @Suppress("DEPRECATION")
+            val code = if (Build.VERSION.SDK_INT >= 28) pi.longVersionCode else pi.versionCode.toLong()
+            pi.packageName to code
+        }
+    } catch (_: Exception) { null }
+
+    fun launchApp(context: Context, packageName: String): Boolean {
+        val intent = context.packageManager.getLaunchIntentForPackage(packageName)?.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        if (intent == null) { toast(context, "Aplikasi belum terpasang"); return false }
+        return try { context.startActivity(intent); true } catch (e: Exception) { toast(context, "Gagal membuka: ${e.message}"); false }
+    }
+
     private fun uriFor(context: Context, file: File): Uri =
         FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
 

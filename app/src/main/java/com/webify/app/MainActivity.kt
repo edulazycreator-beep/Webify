@@ -55,5 +55,6 @@ class MainActivity : ComponentActivity() {
     companion object {
         const val EXTRA_OPEN = "webify_open"
         const val OPEN_CONSOLE = "console"
+        const val OPEN_CRASHES = "crashes"
     }
 }

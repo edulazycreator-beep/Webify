@@ -84,13 +84,25 @@ class DashboardViewModel(
         url: String,
         pkg: String,
         template: (WebProjectEntity) -> WebProjectEntity = { it },
+        iconSource: java.io.File? = null,
+        buildNow: Boolean = false,
+        onBuildStarted: () -> Unit = {},
         onCreated: (String) -> Unit
     ) = viewModelScope.launch {
         try {
             if (repo.isPackageTaken(pkg, "")) { _messages.emit("Package name sudah dipakai proyek lain"); return@launch }
             val p = repo.create(name, url, pkg)
-            val templated = template(p)
+            var templated = template(p)
+            if (iconSource != null && iconSource.exists()) {
+                val dst = repo.projectAssetFile(p.id, "icon_auto_${System.currentTimeMillis()}")
+                runCatching { dst.parentFile?.mkdirs(); iconSource.copyTo(dst, overwrite = true) }
+                    .onSuccess { templated = templated.copy(iconUri = dst.absolutePath) }
+            }
             if (templated != p) repo.save(templated)
+            if (buildNow) {
+                if (buildManager.start(p.id, BuildType.APK_DEBUG)) { onBuildStarted(); return@launch }
+                _messages.emit("Build lain sedang berjalan — proyek tetap dibuat")
+            }
             onCreated(p.id)
         } catch (e: Exception) {
             _messages.emit(e.message ?: "Gagal membuat proyek")

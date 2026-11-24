@@ -30,6 +30,7 @@ data class BuildSession(
     val completedStages: Set<BuildStage> = emptySet(),
     val failedStage: BuildStage? = null,
     val logs: List<LogLine> = emptyList(),
+    val stageTimings: Map<BuildStage, Long> = emptyMap(),
     val result: BuildResult? = null
 )
 
@@ -89,19 +90,27 @@ class BuildManager(
                     }
                 }
                 val log = s.logs.joinToString("\n") { it.format() }
+                val timings = kotlinx.serialization.json.JsonObject(
+                    s.stageTimings.entries.associate { (k, v) -> k.label to kotlinx.serialization.json.JsonPrimitive(v) }
+                ).toString()
+                val snapshot = runCatching { SNAPSHOT_JSON.encodeToString(com.webify.app.data.db.WebProjectEntity.serializer(), project) }.getOrDefault("")
                 when (r) {
                     is BuildResult.Success -> projects.insertBuild(
                         BuildRecordEntity(
                             projectId = project.id, buildType = type, status = BuildStatus.SUCCESS,
                             outputFilePath = r.outputFile.absolutePath, fileSizeBytes = r.sizeBytes,
-                            durationMs = r.durationMs, fullConsoleLog = log.takeLast(MAX_LOG_CHARS)
+                            durationMs = r.durationMs, fullConsoleLog = log.takeLast(MAX_LOG_CHARS),
+                            versionCode = project.versionCode, versionName = project.versionName,
+                            stageTimingsJson = timings, configSnapshotJson = snapshot
                         )
                     )
                     is BuildResult.Failure -> projects.insertBuild(
                         BuildRecordEntity(
                             projectId = project.id, buildType = type, status = BuildStatus.FAILED,
                             durationMs = r.durationMs, fullConsoleLog = log.takeLast(MAX_LOG_CHARS),
-                            errorSummary = "[${r.stage?.label ?: "-"}] ${r.summary}".take(4000)
+                            errorSummary = "[${r.stage?.label ?: "-"}] ${r.summary}".take(4000),
+                            versionCode = project.versionCode, versionName = project.versionName,
+                            stageTimingsJson = timings, configSnapshotJson = snapshot
                         )
                     )
                     null -> Unit
@@ -125,7 +134,10 @@ class BuildManager(
             s ?: return@update null
             when (ev) {
                 is BuildProgressEvent.StageStarted -> s.copy(activeStage = ev.stage, percent = ev.percent)
-                is BuildProgressEvent.StageCompleted -> s.copy(completedStages = s.completedStages + ev.stage, percent = ev.percent)
+                is BuildProgressEvent.StageCompleted -> s.copy(
+                    completedStages = s.completedStages + ev.stage, percent = ev.percent,
+                    stageTimings = s.stageTimings + (ev.stage to ev.durationMs)
+                )
                 is BuildProgressEvent.Progress -> s.copy(percent = maxOf(s.percent, ev.percent))
                 is BuildProgressEvent.Log -> s.copy(logs = (s.logs + ev.line).takeLast(MAX_LOG_LINES))
                 is BuildProgressEvent.Finished -> when (val r = ev.result) {
@@ -151,6 +163,7 @@ class BuildManager(
         }
 
         private const val MAX_LOG_LINES = 3000
+        val SNAPSHOT_JSON = kotlinx.serialization.json.Json { encodeDefaults = true; ignoreUnknownKeys = true }
         private const val MAX_LOG_CHARS = 400_000
     }
 }

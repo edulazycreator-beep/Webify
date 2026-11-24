@@ -59,21 +59,64 @@ class WebifyBuildPipeline(
             val ws = Workspace(File(context.filesDir, "webify_workspaces/${project.id}"))
 
             stage(BuildStage.RESOURCES) { resourceGenerator.generate(project, ws, logger) }
-            stage(BuildStage.MANIFEST) { ManifestGenerator.generate(project, ws, logger) }
+            stage(BuildStage.MANIFEST) { ManifestGenerator.generate(project, ws, logger, debugBuild = buildType == BuildType.APK_DEBUG) }
 
             val aapt2 = Aapt2Wrapper(toolchain.aapt2, toolchain.androidJar)
+            val cache = BuildCache.forProject(context.filesDir, project.id)
+            val toolKey = "aapt2=${toolchain.aapt2.length()}|jar=${toolchain.androidJar.length()}|v1"
             val deps = stage(BuildStage.DEPENDENCIES) { prepareDependencies(project, ws, aapt2, logger) }
 
             stage(BuildStage.AAPT2) {
-                aapt2.compile(ws, logger)
+                val resKey = cache.hashDir(ws.res, extra = toolKey)
+                if (cache.hit("compiled_res.zip", resKey)) {
+                    cache.restore("compiled_res.zip", ws.compiledResZip)
+                    logger.info("♻ aapt2 compile dilewati — resource tidak berubah (cache)")
+                } else {
+                    aapt2.compile(ws, logger)
+                    cache.store("compiled_res.zip", resKey, ws.compiledResZip)
+                }
                 send(BuildProgressEvent.Progress(BuildStage.AAPT2.startPercent + 8))
                 aapt2.link(project, ws, protoFormat = buildType.isBundle, log = logger, deps = deps)
             }
 
-            stage(BuildStage.JAVA_GEN) { javaGenerator.generate(project, ws, logger) }
-            stage(BuildStage.ECJ) { EcjCompilerWrapper(toolchain.androidJar).compile(ws, logger, deps.jars) }
+            stage(BuildStage.JAVA_GEN) { javaGenerator.generate(project, ws, logger, debugBuild = buildType == BuildType.APK_DEBUG) }
+            val classesKey = stage(BuildStage.ECJ) {
+                val key = cache.hashDir(ws.src, extra = toolKey + "|" + cache.hashFilesMeta(deps.jars))
+                if (cache.hit("classes", key)) {
+                    cache.restore("classes", ws.classes)
+                    logger.info("♻ ecj dilewati — kode Java tidak berubah (cache)")
+                } else {
+                    EcjCompilerWrapper(toolchain.androidJar).compile(ws, logger, deps.jars)
+                    cache.store("classes", key, ws.classes)
+                }
+                key
+            }
             val dexFiles = stage(BuildStage.D8) {
-                D8CompilerWrapper(toolchain.androidJar).dex(ws, project.minSdk, buildType.isRelease, logger, deps.jars)
+                val d8 = D8CompilerWrapper(toolchain.androidJar)
+                val release = buildType.isRelease
+                var libKey = ""
+                val preDexed = if (deps.jars.isEmpty()) emptyList() else {
+                    libKey = cache.hashFilesMeta(deps.jars, "min=${project.minSdk}|rel=$release|$toolKey")
+                    if (cache.hit("libdex", libKey)) {
+                        logger.info("♻ pre-dex library dari cache")
+                    } else {
+                        val tmp = File(ws.root, "libdex_tmp")
+                        d8.dexLibraries(deps.jars, tmp, project.minSdk, release, logger)
+                        cache.store("libdex", libKey, tmp)
+                        tmp.deleteRecursively()
+                    }
+                    cache.slot("libdex").listFiles { f -> f.extension == "dex" }?.sortedBy { it.name }.orEmpty()
+                }
+                val dexKey = "$classesKey|$libKey|min=${project.minSdk}|rel=$release"
+                if (cache.hit("dex", dexKey)) {
+                    cache.restore("dex", ws.dex)
+                    logger.info("♻ d8 dilewati — bytecode tidak berubah (cache)")
+                    ws.dex.listFiles { f -> f.name.matches(Regex("classes\\d*\\.dex")) }?.sortedBy { it.name }.orEmpty()
+                } else {
+                    val out = d8.dex(ws, project.minSdk, release, logger, deps.jars, preDexed)
+                    cache.store("dex", dexKey, ws.dex)
+                    out
+                }
             }
 
             val output = stage(BuildStage.PACKAGE) {
@@ -91,6 +134,10 @@ class WebifyBuildPipeline(
                 else ApkPackager.packageApk(ws, dexFiles, key, project.minSdk, outFile, logger)
             }
 
+            if (output.length() > APK_SIZE_WARN) {
+                logger.warn("Ukuran output ${output.length() / (1024 * 1024)} MB melebihi ${APK_SIZE_WARN / (1024 * 1024)} MB — " +
+                    "pertimbangkan mengecualikan library yang tidak dipakai atau memakai AAB untuk Play Store")
+            }
             val duration = System.currentTimeMillis() - started
             logger.success("BUILD SUCCESSFUL dalam ${"%.1f".format(Locale.US, duration / 1000.0)} s • ${output.length() / 1024} KB")
             send(BuildProgressEvent.Progress(100))
@@ -134,7 +181,11 @@ class WebifyBuildPipeline(
         coords.forEach { log.info("• $it") }
         locals.forEach { log.info("• lokal: ${it.name}") }
 
-        val manager = AarDependencyManager(File(context.filesDir, "webify_sdk_repo"), aapt2)
+        val excluded = p.excludedDependencies.lines().map { it.trim() }
+            .filter { it.isNotEmpty() && !it.startsWith("#") }
+            .map { it.split(':').take(2).joinToString(":") }.toSet()
+        if (excluded.isNotEmpty()) log.info("Dikecualikan pengguna: ${excluded.joinToString()}")
+        val manager = AarDependencyManager(File(context.filesDir, "webify_sdk_repo"), aapt2, excluded)
         val deps = manager.prepare(coords, locals, p.minSdk, log)
 
         // Manifest merger
@@ -225,5 +276,9 @@ class WebifyBuildPipeline(
             BuildType.AAB_PLAYSTORE -> "playstore"
         }
         return File(context.filesDir, "webify_outputs/${p.id}/$safe-v${p.versionName}-$suffix-$stamp.${type.extension}")
+    }
+
+    companion object {
+        const val APK_SIZE_WARN = 15L * 1024 * 1024
     }
 }

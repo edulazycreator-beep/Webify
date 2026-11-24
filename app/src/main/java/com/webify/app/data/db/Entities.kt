@@ -27,7 +27,7 @@ data class WebProjectEntity(
     val versionCode: Int = 1,
     val versionName: String = "1.0.0",
     val minSdk: Int = 24,
-    val targetSdk: Int = 35,
+    val targetSdk: Int = 36,
     val createdAt: Long = System.currentTimeMillis(),
     val updatedAt: Long = System.currentTimeMillis(),
 
@@ -129,7 +129,9 @@ data class WebProjectEntity(
     /** Koordinat Maven tambahan, satu per baris (group:artifact:version). */
     val extraDependencies: String = "",
     /** Path file .aar/.jar lokal yang diimpor, satu per baris. */
-    val localLibraries: String = ""
+    val localLibraries: String = "",
+    /** Artefak transitif yang tidak ikut dibundel (group:artifact per baris). */
+    val excludedDependencies: String = ""
 )
 
 @Entity(tableName = "keystores")
@@ -170,7 +172,13 @@ data class BuildRecordEntity(
     val durationMs: Long = 0,
     val fullConsoleLog: String = "",
     val errorSummary: String? = null,
-    val timestamp: Long = System.currentTimeMillis()
+    val timestamp: Long = System.currentTimeMillis(),
+    val versionCode: Int = 0,
+    val versionName: String = "",
+    /** {"Resources":110,...} durasi per tahap (ms). */
+    val stageTimingsJson: String = "",
+    /** Snapshot pengaturan proyek saat build (JSON WebProjectEntity) untuk perbandingan. */
+    val configSnapshotJson: String = ""
 )
 
 @Entity(tableName = "chat_messages", indices = [Index("conversationId"), Index("createdAt")])

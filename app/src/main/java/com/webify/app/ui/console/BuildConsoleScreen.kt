@@ -41,6 +41,7 @@ import androidx.compose.material.icons.rounded.ContentCopy
 import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.Error
 import androidx.compose.material.icons.rounded.InstallMobile
+import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Share
 import androidx.compose.material.icons.rounded.Stop
 import androidx.compose.material.icons.rounded.Terminal
@@ -358,9 +359,24 @@ private fun PostBuildCard(r: BuildResult, s: BuildSession, onAnalyze: () -> Unit
                                 style = WebifyTheme.mono.copy(fontSize = MaterialTheme.typography.labelSmall.fontSize), color = MaterialTheme.colorScheme.onSecondaryContainer)
                         }
                     }
+                    // Instal & Buka: pantau status pemasangan selama kartu tampil
+                    val apkMeta = remember(r.outputFile) { if (r.buildType.isBundle) null else FileActions.apkInfo(ctx, r.outputFile) }
+                    var installed by remember { mutableStateOf<FileActions.InstalledInfo?>(null) }
+                    LaunchedEffect(apkMeta) {
+                        while (apkMeta != null) {
+                            installed = FileActions.installedInfo(ctx, apkMeta.first)
+                            kotlinx.coroutines.delay(1500)
+                        }
+                    }
+                    val upToDate = apkMeta != null && installed != null && installed!!.versionCode == apkMeta.second &&
+                        installed!!.lastUpdate >= r.outputFile.lastModified() - 2000
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                         if (r.buildType != BuildType.AAB_PLAYSTORE) {
-                            PrimaryButton("Install APK", onClick = { FileActions.installApk(ctx, r.outputFile) }, icon = Icons.Rounded.InstallMobile, modifier = Modifier.weight(1f))
+                            if (upToDate) {
+                                PrimaryButton("Buka Aplikasi", onClick = { FileActions.launchApp(ctx, apkMeta!!.first) }, icon = Icons.Rounded.PlayArrow, modifier = Modifier.weight(1f))
+                            } else {
+                                PrimaryButton(if (installed != null) "Perbarui APK" else "Install APK", onClick = { FileActions.installApk(ctx, r.outputFile) }, icon = Icons.Rounded.InstallMobile, modifier = Modifier.weight(1f))
+                            }
                         }
                         SecondaryButton(
                             if (r.buildType == BuildType.AAB_PLAYSTORE) "Share AAB" else "Share",

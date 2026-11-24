@@ -1,5 +1,9 @@
 package com.webify.app.ui.dashboard
 
+import kotlinx.coroutines.launch
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.material.icons.rounded.Storage
+import androidx.compose.material.icons.rounded.BugReport
 import androidx.compose.material.icons.rounded.ExpandMore
 import androidx.compose.material.icons.rounded.IosShare
 import androidx.compose.material.icons.rounded.Collections
@@ -108,7 +112,8 @@ fun DashboardScreen(
     container: AppContainer,
     onOpenProject: (String) -> Unit,
     onOpenConsole: () -> Unit,
-    onOpenAssets: (String) -> Unit
+    onOpenAssets: (String) -> Unit,
+    onOpenCrashes: () -> Unit
 ) {
     val vm = appViewModel { DashboardViewModel(it.projectRepository, it.keystoreRepository, it.buildManager, it.archiveManager) }
     val ctx = androidx.compose.ui.platform.LocalContext.current
@@ -120,6 +125,7 @@ fun DashboardScreen(
     val ui by container.securePrefs.uiSettings.collectAsStateWithLifecycle()
     val snackbar = remember { SnackbarHostState() }
     var showCreate by rememberSaveable { mutableStateOf(false) }
+    var showCache by rememberSaveable { mutableStateOf(false) }
     var toDelete by remember { mutableStateOf<WebProjectEntity?>(null) }
     val toolchain = remember { container.toolchain.status() }
     val dockInset = LocalDockInset.current
@@ -144,7 +150,9 @@ fun DashboardScreen(
             item(span = { GridItemSpan(maxLineSpan) }) {
                 Header(
                     ui = ui, onUi = { container.securePrefs.saveUi(it) }, onCreate = { showCreate = true },
-                    onImport = { importer.launch(arrayOf("*/*")) }
+                    onImport = { importer.launch(arrayOf("*/*")) },
+                    onCrashes = onOpenCrashes,
+                    onCache = { showCache = true }
                 )
             }
             item(span = { GridItemSpan(maxLineSpan) }) {
@@ -231,12 +239,26 @@ fun DashboardScreen(
         }
     }
 
-    if (showCreate) CreateProjectDialog(
+    if (showCreate) NewProjectWizard(
         onDismiss = { showCreate = false },
-        onCreate = { name, url, pkg, template ->
-            vm.create(name, url, pkg, template.apply) { id -> showCreate = false; onOpenProject(id) }
+        onFinish = { r ->
+            val meta = r.meta
+            vm.create(
+                r.name, r.url, r.packageName,
+                template = { base ->
+                    var n = r.template.apply(base)
+                    meta?.themeColor?.let { c -> n = n.copy(primaryColorHex = c, statusBarColorHex = c, progressBarColorHex = c) }
+                    (meta?.backgroundColor ?: meta?.themeColor)?.let { c -> n = n.copy(splashBgColorHex = c) }
+                    meta?.backgroundColor?.let { c -> n = n.copy(adaptiveBgColor = c) }
+                    n
+                },
+                iconSource = meta?.iconFile,
+                buildNow = r.buildNow,
+                onBuildStarted = { showCreate = false; onOpenConsole() }
+            ) { id -> showCreate = false; onOpenProject(id) }
         }
     )
+    if (showCache) CacheDialog(onDismiss = { showCache = false })
 
     toDelete?.let { p ->
         AlertDialog(
@@ -253,7 +275,10 @@ fun DashboardScreen(
 }
 
 @Composable
-private fun Header(ui: UiSettings, onUi: (UiSettings) -> Unit, onCreate: () -> Unit, onImport: () -> Unit) {
+private fun Header(
+    ui: UiSettings, onUi: (UiSettings) -> Unit, onCreate: () -> Unit, onImport: () -> Unit,
+    onCrashes: () -> Unit, onCache: () -> Unit
+) {
     var menu by remember { mutableStateOf(false) }
     Row(
         Modifier.fillMaxWidth().padding(top = 8.dp),
@@ -294,6 +319,16 @@ private fun Header(ui: UiSettings, onUi: (UiSettings) -> Unit, onCreate: () -> U
                     text = { Text("Impor proyek (.webify)") },
                     leadingIcon = { Icon(Icons.Rounded.FileOpen, null, Modifier.size(Dimens.IconInline)) },
                     onClick = { menu = false; onImport() }
+                )
+                DropdownMenuItem(
+                    text = { Text("Laporan crash") },
+                    leadingIcon = { Icon(Icons.Rounded.BugReport, null, Modifier.size(Dimens.IconInline)) },
+                    onClick = { menu = false; onCrashes() }
+                )
+                DropdownMenuItem(
+                    text = { Text("Kelola cache") },
+                    leadingIcon = { Icon(Icons.Rounded.Storage, null, Modifier.size(Dimens.IconInline)) },
+                    onClick = { menu = false; onCache() }
                 )
                 HorizontalDivider()
                 DropdownMenuItem(text = { Text("Ikuti sistem") }, leadingIcon = { Icon(Icons.Rounded.SettingsBrightness, null, Modifier.size(Dimens.IconInline)) }, onClick = { onUi(ui.copy(darkMode = null)); menu = false })
@@ -425,58 +460,51 @@ fun ProjectIcon(p: WebProjectEntity, sizeDp: Int) {
     }
 }
 
-@Composable
-private fun CreateProjectDialog(onDismiss: () -> Unit, onCreate: (String, String, String, ProjectTemplate) -> Unit) {
-    var template by rememberSaveable { mutableStateOf(ProjectTemplate.BLANK) }
-    var showTemplates by remember { mutableStateOf(false) }
-    var name by rememberSaveable { mutableStateOf("") }
-    var url by rememberSaveable { mutableStateOf("https://") }
-    var pkg by rememberSaveable { mutableStateOf("") }
-    var pkgEdited by rememberSaveable { mutableStateOf(false) }
-    val effectivePkg = if (pkgEdited) pkg else DashboardViewModel.suggestPackage(name)
-    val pkgError = Validators.packageNameError(effectivePkg)
-    val urlError = Validators.urlError(url)
 
+/** Ukuran & pembersihan cache SDK (unduhan Maven) dan cache build inkremental. */
+@Composable
+private fun CacheDialog(onDismiss: () -> Unit) {
+    val ctx = androidx.compose.ui.platform.LocalContext.current
+    var sdk by remember { mutableStateOf(-1L) }
+    var build by remember { mutableStateOf(-1L) }
+    var busy by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
+    fun refresh() = scope.launch {
+        val (a, b) = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            com.webify.app.build.AarDependencyManager.cacheSize(ctx.filesDir) to com.webify.app.build.BuildCache.totalSize(ctx.filesDir)
+        }
+        sdk = a; build = b
+    }
+    LaunchedEffect(Unit) { refresh() }
+    fun clear(action: (java.io.File) -> Long, label: String) = scope.launch {
+        busy = true
+        val freed = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { action(ctx.filesDir) }
+        busy = false
+        com.webify.app.util.FileActions.toast(ctx, "$label dibersihkan • ${com.webify.app.util.FileActions.humanSize(freed)}")
+        refresh()
+    }
+    fun fmt(v: Long) = if (v < 0) "menghitung…" else com.webify.app.util.FileActions.humanSize(v)
     AlertDialog(
         onDismissRequest = onDismiss,
-        icon = { Icon(Icons.Rounded.Add, null) },
-        title = { Text("Proyek Baru") },
+        icon = { Icon(Icons.Rounded.Storage, null) },
+        title = { Text("Kelola Cache") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(Dimens.FieldGap)) {
-                Surface(
-                    onClick = { showTemplates = true },
-                    shape = RoundedCornerShape(Dimens.RadiusControl),
-                    color = MaterialTheme.colorScheme.primaryContainer,
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Row(Modifier.padding(horizontal = 12.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Icon(template.icon, null, Modifier.size(Dimens.IconInline), tint = MaterialTheme.colorScheme.onPrimaryContainer)
-                        Spacer(Modifier.width(Dimens.IconTextGap))
-                        Column(Modifier.weight(1f)) {
-                            Text("Mulai dari Template", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onPrimaryContainer)
-                            Text(template.title, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold,
-                                color = MaterialTheme.colorScheme.onPrimaryContainer, maxLines = 1)
-                        }
-                        Icon(Icons.Rounded.ExpandMore, null, Modifier.size(Dimens.IconInline), tint = MaterialTheme.colorScheme.onPrimaryContainer)
-                    }
+                Text("Cache SDK • ${fmt(sdk)}", style = MaterialTheme.typography.titleSmall)
+                Text("Library Maven/AAR yang sudah diunduh (FCM, AdMob, ZXing…). Bersihkan bila build gagal karena file rusak; akan diunduh ulang.",
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                FilledTonalButton(onClick = { clear(com.webify.app.build.AarDependencyManager::clearCache, "Cache SDK") }, enabled = !busy && sdk > 0) {
+                    Text("Bersihkan cache SDK")
                 }
-                LabeledField("Nama aplikasi", name, { name = it }, placeholder = "Toko Saya")
-                LabeledField("URL website", url, { url = it.trim() }, error = if (url.length > 8) urlError else null,
-                    mono = true, keyboardType = KeyboardType.Uri)
-                LabeledField("Package name", effectivePkg, { pkg = it.trim().lowercase(); pkgEdited = true },
-                    error = if (effectivePkg.isNotEmpty()) pkgError else null, mono = true,
-                    supporting = "ID unik di Play Store, tidak bisa diubah setelah rilis")
+                HorizontalDivider()
+                Text("Cache build • ${fmt(build)}", style = MaterialTheme.typography.titleSmall)
+                Text("Hasil aapt2/ecj/d8 yang dipakai ulang agar build berikutnya lebih cepat.",
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                FilledTonalButton(onClick = { clear(com.webify.app.build.BuildCache::clearAll, "Cache build") }, enabled = !busy && build > 0) {
+                    Text("Bersihkan cache build")
+                }
             }
         },
-        confirmButton = {
-            TextButton(
-                enabled = name.isNotBlank() && pkgError == null && urlError == null,
-                onClick = { onCreate(name, url, effectivePkg, template) }
-            ) { Text("Buat") }
-        },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Batal") } }
+        confirmButton = { TextButton(onClick = onDismiss) { Text("Tutup") } }
     )
-    if (showTemplates) {
-        TemplateGallerySheet(selected = template, onDismiss = { showTemplates = false }) { template = it; showTemplates = false }
-    }
 }

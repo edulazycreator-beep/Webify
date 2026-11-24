@@ -19,6 +19,9 @@ interface WebProjectDao {
     @Query("SELECT * FROM web_projects WHERE id = :id")
     suspend fun get(id: String): WebProjectEntity?
 
+    @Query("SELECT * FROM web_projects WHERE packageName = :pkg LIMIT 1")
+    suspend fun findByPackage(pkg: String): WebProjectEntity?
+
     @Query("SELECT COUNT(*) FROM web_projects WHERE packageName = :pkg AND id != :excludeId")
     suspend fun countPackage(pkg: String, excludeId: String): Int
 

@@ -3,7 +3,7 @@
 # Webify — Provisioning aset toolchain on-device
 #
 #  1. libaapt2.so (arm64-v8a & armeabi-v7a) → app/src/main/jniLibs/<abi>/libaapt2.so
-#  2. android.jar (platform android-35)     → app/src/main/assets/android.jar
+#  2. android.jar (platform android-36)     → app/src/main/assets/android.jar
 #  3. Font OFL (opsional, sudah dibundel)   → app/src/main/assets/fonts/
 #
 # CATATAN PENTING tentang aapt2:
@@ -27,7 +27,7 @@ ASSETS="$APP/assets"
 WORK="$(mktemp -d -t webify-toolchain-XXXXXX)"
 trap 'rm -rf "$WORK"' EXIT
 
-PLATFORM_API="${WEBIFY_PLATFORM_API:-35}"
+PLATFORM_API="${WEBIFY_PLATFORM_API:-36}"
 RELEASE_BASE="${AAPT2_RELEASE_BASE:-https://github.com/lzhiyong/android-sdk-tools/releases/latest/download}"
 AAPT2_ARM64_URL="${AAPT2_ARM64_URL:-$RELEASE_BASE/android-sdk-tools-static-aarch64.zip}"
 AAPT2_ARMV7_URL="${AAPT2_ARMV7_URL:-$RELEASE_BASE/android-sdk-tools-static-arm.zip}"

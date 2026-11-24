@@ -41,6 +41,7 @@ class ProjectRepository(
         dao.upsert(project.copy(updatedAt = System.currentTimeMillis()))
     }
 
+    suspend fun findByPackage(pkg: String) = dao.findByPackage(pkg)
     suspend fun isPackageTaken(pkg: String, excludeId: String) = dao.countPackage(pkg, excludeId) > 0
 
     suspend fun clone(project: WebProjectEntity): WebProjectEntity = withContext(Dispatchers.IO) {

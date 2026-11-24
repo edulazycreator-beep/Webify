@@ -82,6 +82,7 @@ object Routes {
     const val CONSOLE = "console"
     const val PREVIEW = "preview/{projectId}"
     const val ASSETS = "assets/{projectId}"
+    const val CRASHES = "crashes"
     fun assets(id: String) = "assets/$id"
     fun preview(id: String) = "preview/$id"
     fun studio(id: String) = "studio/$id"
@@ -108,10 +109,11 @@ fun WebifyRoot(container: AppContainer) {
     LaunchedEffect(navRequest) {
         when (navRequest) {
             com.webify.app.MainActivity.OPEN_CONSOLE -> nav.navigate(Routes.CONSOLE) { launchSingleTop = true }
+            com.webify.app.MainActivity.OPEN_CRASHES -> nav.navigate(Routes.CRASHES) { launchSingleTop = true }
         }
         if (navRequest != null) container.navRequests.value = null
     }
-    val showNav = route != Routes.CONSOLE && route != Routes.PREVIEW && route != Routes.ASSETS
+    val showNav = route != Routes.CONSOLE && route != Routes.PREVIEW && route != Routes.ASSETS && route != Routes.CRASHES
 
     fun selected(dest: TopDest) = when (dest.route) {
         Routes.STUDIO -> route == Routes.STUDIO || route == Routes.STUDIO_PROJECT
@@ -215,7 +217,10 @@ private fun WebifyNavGraph(
         popExitTransition = { fadeOut(tween(160)) + slideOutOfContainer(AnimatedContentTransitionScope.SlideDirection.End, tween(260), targetOffset = { it / 12 }) }
     ) {
         composable(Routes.PROJECTS) {
-            DashboardScreen(container = container, onOpenProject = openStudio, onOpenConsole = openConsole, onOpenAssets = openAssets)
+            DashboardScreen(
+                container = container, onOpenProject = openStudio, onOpenConsole = openConsole, onOpenAssets = openAssets,
+                onOpenCrashes = { nav.navigate(Routes.CRASHES) { launchSingleTop = true } }
+            )
         }
         composable(Routes.STUDIO) {
             StudioPickerScreen(container = container, onOpenProject = openStudio)
@@ -244,6 +249,9 @@ private fun WebifyNavGraph(
         }
         composable(Routes.KEYSTORES) { KeystoreVaultScreen(container = container) }
         composable(Routes.COPILOT) { CopilotScreen(container = container, onOpenAssets = openAssets) }
+        composable(Routes.CRASHES) {
+            com.webify.app.ui.crash.CrashReportsScreen(container = container, onBack = { nav.popBackStack() }, onOpenCopilot = openCopilot)
+        }
         composable(
             Routes.ASSETS,
             arguments = listOf(navArgument("projectId") { type = NavType.StringType })

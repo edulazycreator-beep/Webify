@@ -23,12 +23,12 @@ import java.io.File
  */
 class JavaTemplateGenerator(private val context: Context) {
 
-    fun generate(project: WebProjectEntity, ws: Workspace, log: BuildLogger) {
+    fun generate(project: WebProjectEntity, ws: Workspace, log: BuildLogger, debugBuild: Boolean = false) {
         val pkg = project.packageName
         val pkgDir = File(ws.src, pkg.replace('.', '/')).apply { mkdirs() }
 
         val bc = File(pkgDir, "BuildConfig.java")
-        bc.writeText(buildConfig(project))
+        bc.writeText(buildConfig(project, debugBuild))
         log.info("BuildConfig.java dibuat (${bc.length()} byte)")
 
         val pluginWrites = File(pkgDir, "WebifyPlugins.java")
@@ -53,7 +53,7 @@ class JavaTemplateGenerator(private val context: Context) {
         log.info("${templates.size + 2} kelas Java + R.java siap di ${pkgDir.relativeTo(ws.root).path}")
     }
 
-    private fun buildConfig(p: WebProjectEntity): String {
+    private fun buildConfig(p: WebProjectEntity, debugBuild: Boolean): String {
         val isLocal = p.sourceType == SourceType.LOCAL_HTML_ZIP
         val target = if (isLocal) "file:///android_asset/www/index.html" else p.targetUrl.trim()
         val domains = p.allowedDomains.split(',', '\n', ' ', ';')
@@ -161,6 +161,7 @@ class JavaTemplateGenerator(private val context: Context) {
             appendLine("    public static final String[] NAV_URLS = new String[]{${navItems.joinToString(", ") { lit(NativeConfigCodec.resolve(target, it.targetUrl)) }}};")
             appendLine("    public static final int[] NAV_ICONS = new int[]{${navItems.joinToString(", ") { "R.drawable.wf_ic_" + NavIcon.of(it.icon).key }}};")
             appendLine("    public static final boolean BIOMETRIC_LOCK = ${p.enableBiometricLock};")
+            appendLine("    public static final boolean CRASH_REPORTER = $debugBuild;")
             appendLine("    public static final boolean ABOUT_ENABLED = ${p.enableAboutDialog};")
             appendLine("    public static final String PRIVACY_URL = ${lit(p.privacyPolicyUrl.trim())};")
             appendLine()
@@ -294,7 +295,8 @@ small{display:block;margin-top:16px;font-size:12px;opacity:.6}
             "WebifyNativeNav.java",
             "BiometricLockHelper.java",
             "WebifyAboutDialog.java",
-            "WebifyNotificationReceiver.java"
+            "WebifyNotificationReceiver.java",
+            "WebifyCrashReporter.java"
         )
         private const val CHUNK = 8000
 

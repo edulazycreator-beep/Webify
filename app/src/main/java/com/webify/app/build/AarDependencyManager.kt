@@ -243,7 +243,12 @@ object PomParser {
  *  3. Ekstraksi AAR → classes.jar, libs/(semua .jar), res/, AndroidManifest.xml, assets/, jni/.
  *  4. Kompilasi resource tiap AAR dengan aapt2 (di-cache).
  */
-class AarDependencyManager(private val repoRoot: File, private val aapt2: Aapt2Wrapper) {
+class AarDependencyManager(
+    private val repoRoot: File,
+    private val aapt2: Aapt2Wrapper,
+    /** group:artifact yang dikecualikan pengguna (library opsional). */
+    private val excluded: Set<String> = emptySet()
+) {
 
     private val repos = listOf(
         "https://dl.google.com/dl/android/maven2/",
@@ -279,8 +284,16 @@ class AarDependencyManager(private val repoRoot: File, private val aapt2: Aapt2W
 
         val resolved = resolve(coordinates, log)
         val libs = ArrayList<ExtractedLibrary>()
+        val pending = resolved.count { !isCached(it) }
+        if (pending > 0) log.info("Mengunduh $pending dari ${resolved.size} artefak (sisanya dari cache)…")
+        var done = 0
         for (c in resolved) {
+            val cached = isCached(c)
             val file = download(c, log)
+            if (!cached) {
+                done++
+                log.info("↓ [$done/$pending] ${c.artifact}:${c.version} • ${file.length() / 1024} KB")
+            }
             libs += extract(file, "$c")
         }
         for (f in localFiles) {
@@ -304,8 +317,25 @@ class AarDependencyManager(private val repoRoot: File, private val aapt2: Aapt2W
             resZips += out
         }
         val packages = libs.mapNotNull { it.packageName }.distinct()
+        reportSize(libs, log)
         log.info("Dependensi siap: ${libs.size} library, ${libs.sumOf { it.jars.size }} JAR, ${resZips.size} paket resource, ${packages.size} paket R")
         return DependencySet(libs, resZips, packages)
+    }
+
+    /** Peringatan ukuran: total bytecode library & daftar penyumbang terbesar. */
+    private fun reportSize(libs: List<ExtractedLibrary>, log: BuildLogger) {
+        val sizes = libs.map { lib -> lib to lib.jars.sumOf { it.length() } }.sortedByDescending { it.second }
+        val totalKb = sizes.sumOf { it.second } / 1024
+        log.info("Total bytecode library: ${totalKb / 1024} MB ($totalKb KB)")
+        if (totalKb > SIZE_WARN_KB) {
+            log.warn("Library besar (> ${SIZE_WARN_KB / 1024} MB) → APK membesar & D8 lebih lama. Penyumbang terbesar:")
+            sizes.take(5).forEach { (lib, b) -> log.warn("   ${b / 1024} KB  ${lib.name}") }
+            log.warn("Kecualikan yang tidak dipakai di Studio → SDK → Dependensi Lanjutan → \"Kecualikan\" (format group:artifact)")
+        }
+    }
+
+    private fun isCached(c: MavenCoordinate): Boolean = listOf("aar", "jar").any { ext ->
+        File(repoRoot, "maven/${c.group.replace('.', '/')}/${c.artifact}/${c.version}/${c.artifact}-${c.version}.$ext").let { it.exists() && it.length() > 0 }
     }
 
     // ------------------------------------------------------------------ Resolusi
@@ -317,6 +347,7 @@ class AarDependencyManager(private val repoRoot: File, private val aapt2: Aapt2W
         while (queue.isNotEmpty() && guard++ < 2000) {
             val c = queue.removeFirst()
             if (c.key in skip) continue
+            if (c.key in excluded) { log.info("Dikecualikan: ${c.key}"); continue }
             val current = chosen[c.key]
             if (current != null && MavenVersion.compare(current.version, c.version) >= 0) continue
             chosen[c.key] = c
@@ -345,22 +376,29 @@ class AarDependencyManager(private val repoRoot: File, private val aapt2: Aapt2W
         if (cache && local.exists() && local.length() > 0) return local.readBytes()
         var lastError: Exception? = null
         for (base in repos) {
-            try {
-                http.newCall(Request.Builder().url(base + path).build()).execute().use { resp ->
-                    if (resp.code == 404) return@use
-                    if (!resp.isSuccessful) throw IOException("HTTP ${resp.code} dari $base")
-                    val bytes = resp.body?.bytes() ?: throw IOException("Respons kosong")
+            for (attempt in 1..MAX_ATTEMPTS) {
+                try {
+                    val bytes = http.newCall(Request.Builder().url(base + path).build()).execute().use { resp ->
+                        if (resp.code == 404) return@use null
+                        if (!resp.isSuccessful) throw IOException("HTTP ${resp.code} dari $base")
+                        val body = resp.body ?: throw IOException("Respons kosong")
+                        val expected = body.contentLength()
+                        val data = body.bytes()
+                        if (expected > 0 && data.size.toLong() != expected) throw IOException("Unduhan terpotong (${data.size}/$expected byte)")
+                        data
+                    } ?: break // 404 → coba repositori berikutnya
                     local.parentFile?.mkdirs()
                     val tmp = File(local.parentFile, local.name + ".part")
                     tmp.writeBytes(bytes)
-                    tmp.renameTo(local)
+                    if (!tmp.renameTo(local)) { tmp.copyTo(local, overwrite = true); tmp.delete() }
                     return bytes
+                } catch (e: IOException) {
+                    lastError = e
+                    if (attempt < MAX_ATTEMPTS) Thread.sleep(RETRY_BASE_MS * attempt * attempt)
                 }
-            } catch (e: IOException) {
-                lastError = e
             }
         }
-        throw IOException("Tidak ditemukan di repositori: $path", lastError)
+        throw IOException("Tidak ditemukan di repositori: $path" + (lastError?.message?.let { " ($it)" } ?: ""), lastError)
     }
 
     private fun download(c: MavenCoordinate, log: BuildLogger): File {
@@ -421,6 +459,23 @@ class AarDependencyManager(private val repoRoot: File, private val aapt2: Aapt2W
             minSdk = minSdk,
             root = out
         )
+    }
+
+    companion object {
+        private const val MAX_ATTEMPTS = 3
+        private const val RETRY_BASE_MS = 1200L
+        const val SIZE_WARN_KB = 8 * 1024L
+
+        /** Hapus seluruh cache SDK (unduhan Maven, ekstraksi, resource terkompilasi). @return byte yang dibebaskan. */
+        fun clearCache(filesDir: File): Long {
+            val dir = File(filesDir, "webify_sdk_repo")
+            val size = dir.walkTopDown().filter { it.isFile }.sumOf { it.length() }
+            dir.deleteRecursively()
+            return size
+        }
+
+        fun cacheSize(filesDir: File): Long =
+            File(filesDir, "webify_sdk_repo").walkTopDown().filter { it.isFile }.sumOf { it.length() }
     }
 
     private fun readManifestInfo(f: File): Pair<String?, Int?> = try {

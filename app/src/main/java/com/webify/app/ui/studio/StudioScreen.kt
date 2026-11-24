@@ -65,6 +65,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.automirrored.rounded.ExitToApp
 import androidx.compose.material.icons.rounded.Android
+import androidx.compose.material.icons.rounded.SearchOff
 import androidx.compose.material.icons.rounded.ArrowDropDown
 import androidx.compose.material.icons.rounded.Inventory2
 import androidx.compose.material.icons.rounded.UploadFile
@@ -266,6 +267,13 @@ fun StudioScreen(
     val pagerState = rememberPagerState(initialPage = savedPage) { TABS.size }
     LaunchedEffect(pagerState.currentPage) { savedPage = pagerState.currentPage }
     var target by rememberSaveable { mutableStateOf(BuildType.APK_DEBUG) }
+    var searching by rememberSaveable { mutableStateOf(false) }
+    var query by rememberSaveable { mutableStateOf("") }
+    var gateIssues by remember { mutableStateOf<List<com.webify.app.domain.PlayStoreChecker.Issue>?>(null) }
+    val jumpTo: (Int) -> Unit = { i -> scope.launch { pagerState.animateScrollToPage(i) } }
+    fun releaseIssues(t: BuildType) = draft?.let { d ->
+        com.webify.app.domain.PlayStoreChecker.check(d, builds, keystores.firstOrNull { it.id == d.selectedKeystoreId }, t.isBundle)
+    }.orEmpty()
 
     LaunchedEffect(Unit) { vm.messages.collect { snackbar.showSnackbar(it) } }
     LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { vm.reload() }
@@ -294,6 +302,9 @@ fun StudioScreen(
                     }
                 },
                 actions = {
+                    IconButton(onClick = { searching = !searching; if (!searching) query = "" }) {
+                        Icon(if (searching) Icons.Rounded.SearchOff else Icons.Rounded.Search, "Cari pengaturan", Modifier.size(Dimens.IconBar))
+                    }
                     IconButton(onClick = {
                         if (p != null) container.copilotBus.post(
                             CopilotRequest(
@@ -320,7 +331,10 @@ fun StudioScreen(
                             onOpenPreview(p.id)
                         }
                     },
-                    onBuild = { vm.startBuild(target, onOpenConsole) }
+                    onBuild = {
+                        val blocking = if (target.isRelease) releaseIssues(target).filter { it.severity == com.webify.app.domain.PlayStoreChecker.Severity.ERROR } else emptyList()
+                        if (blocking.isNotEmpty()) gateIssues = releaseIssues(target) else vm.startBuild(target, onOpenConsole)
+                    }
                 )
             }
         },
@@ -332,6 +346,14 @@ fun StudioScreen(
         }
         val update: Updater = vm::update
         Column(Modifier.fillMaxSize().padding(pad)) {
+            androidx.compose.animation.AnimatedVisibility(visible = searching) {
+                SettingsSearchBar(query, { query = it }) { entry ->
+                    searching = false
+                    query = ""
+                    jumpTo(entry.tab)
+                    scope.launch { snackbar.showSnackbar("${entry.section} → ${entry.label}") }
+                }
+            }
             PillTabRow(
                 pagePosition = pagerState.currentPage + pagerState.currentPageOffsetFraction,
                 selected = pagerState.targetPage,
@@ -350,7 +372,7 @@ fun StudioScreen(
                     verticalArrangement = Arrangement.spacedBy(Dimens.SectionGap)
                 ) {
                     when (page) {
-                        0 -> IdentityPage(p, errors, update, vm, autofilling, canChangePackage = builds.isEmpty())
+                        0 -> IdentityPage(p, errors, update, vm, autofilling, canChangePackage = builds.isEmpty(), keystores = keystores)
                         1 -> AppearancePage(p, errors, update)
                         2 -> WebViewPage(p, update)
                         3 -> PermissionsCodePage(p, update, onAskAi = { instruction ->
@@ -359,9 +381,50 @@ fun StudioScreen(
                         })
                         4 -> SdkPage(p, update, vm)
                         5 -> BuildPage(p, keystores, builds, errors, target, onTarget = { target = it }, update = update,
-                            onQuickBuild = { vm.startBuild(BuildType.APK_DEBUG, onOpenConsole) })
+                            onQuickBuild = { vm.startBuild(BuildType.APK_DEBUG, onOpenConsole) },
+                            readiness = releaseIssues(if (target.isRelease) target else BuildType.AAB_PLAYSTORE),
+                            onJump = jumpTo)
                     }
                     Spacer(Modifier.height(16.dp))
+                }
+            }
+        }
+    }
+    gateIssues?.let { issues ->
+        PlayStoreGateDialog(
+            issues = issues,
+            onDismiss = { gateIssues = null },
+            onBuildAnyway = { vm.startBuild(target, onOpenConsole) },
+            onJump = jumpTo
+        )
+    }
+}
+
+@Composable
+private fun SettingsSearchBar(query: String, onQuery: (String) -> Unit, onPick: (SettingEntry) -> Unit) {
+    val results = remember(query) { searchSettings(query) }
+    Column(Modifier.fillMaxWidth().padding(horizontal = Dimens.ScreenPadding, vertical = 6.dp)) {
+        LabeledField("Cari pengaturan", query, onQuery, leadingIcon = Icons.Rounded.Search, placeholder = "mis. biometrik, admob, warna")
+        if (query.isNotBlank()) {
+            Surface(
+                shape = RoundedCornerShape(Dimens.RadiusControl),
+                color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                modifier = Modifier.fillMaxWidth().padding(top = 6.dp)
+            ) {
+                Column(Modifier.heightIn(max = 280.dp).verticalScroll(rememberScrollState())) {
+                    if (results.isEmpty()) {
+                        Text("Tidak ditemukan", style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(12.dp),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    results.forEach { r ->
+                        Row(
+                            Modifier.fillMaxWidth().clickable { onPick(r) }.padding(horizontal = 12.dp, vertical = 10.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(r.label, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            Pill(r.section, MaterialTheme.colorScheme.secondaryContainer, MaterialTheme.colorScheme.onSecondaryContainer)
+                        }
+                    }
                 }
             }
         }
@@ -663,7 +726,10 @@ private fun ExpandableCodeCard(
 // =============================================================================
 
 @Composable
-private fun IdentityPage(p: WebProjectEntity, e: StudioErrors, update: Updater, vm: StudioViewModel, autofilling: Boolean, canChangePackage: Boolean) {
+private fun IdentityPage(
+    p: WebProjectEntity, e: StudioErrors, update: Updater, vm: StudioViewModel, autofilling: Boolean, canChangePackage: Boolean,
+    keystores: List<KeystoreEntity>
+) {
     val iconPicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri: Uri? -> uri?.let(vm::setIcon) }
     val zipPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? -> uri?.let(vm::setSiteZip) }
 
@@ -686,7 +752,7 @@ private fun IdentityPage(p: WebProjectEntity, e: StudioErrors, update: Updater, 
         }
         Row(horizontalArrangement = Arrangement.spacedBy(Dimens.FieldGap)) {
             SelectField("minSdk", (21..30).toList(), p.minSdk, { "API $it" }, { v -> update { it.copy(minSdk = v) } }, Modifier.weight(1f))
-            SelectField("targetSdk", listOf(33, 34, 35), p.targetSdk, { "API $it" }, { v -> update { it.copy(targetSdk = v) } }, Modifier.weight(1f))
+            SelectField("targetSdk", listOf(34, 35, 36), p.targetSdk, { "API $it" }, { v -> update { it.copy(targetSdk = v) } }, Modifier.weight(1f))
         }
     }
 
@@ -732,7 +798,12 @@ private fun IdentityPage(p: WebProjectEntity, e: StudioErrors, update: Updater, 
             "Domain internal tambahan", p.allowedDomains, { v -> update { it.copy(allowedDomains = v) } }, mono = true,
             supporting = "Pisahkan dengan koma. Domain lain dibuka di browser.", placeholder = "auth.toko.com, cdn.toko.com"
         )
-        LabeledField("Deep Link / App Links (opsional)", p.deepLinkHost, { v -> update { it.copy(deepLinkHost = v.trim()) } }, mono = true, placeholder = "toko.com")
+        LabeledField("Deep Link / App Links (opsional)", p.deepLinkHost, { v -> update { it.copy(deepLinkHost = v.trim()) } }, mono = true, placeholder = "toko.com",
+            supporting = "Link https://domain ini dari WhatsApp/Chrome langsung membuka aplikasi")
+        AppLinksHelper(p, keystores) {
+            val host = runCatching { java.net.URI(p.targetUrl.trim()).host }.getOrNull()
+            if (!host.isNullOrBlank()) update { it.copy(deepLinkHost = host) }
+        }
     }
 
     SectionCard("Ikon Aplikasi", Icons.Rounded.Image, "Pratinjau adaptive icon (bulat & kotak)") {
@@ -1032,7 +1103,9 @@ private fun BuildPage(
     target: BuildType,
     onTarget: (BuildType) -> Unit,
     update: Updater,
-    onQuickBuild: () -> Unit
+    onQuickBuild: () -> Unit,
+    readiness: List<com.webify.app.domain.PlayStoreChecker.Issue>,
+    onJump: (Int) -> Unit
 ) {
     val ctx = LocalContext.current
     var exportFile by remember { mutableStateOf<File?>(null) }
@@ -1044,6 +1117,8 @@ private fun BuildPage(
     val debugKs = keystores.firstOrNull { it.isDebugDefault }
     val releaseKs = keystores.filter { !it.isDebugDefault }
     val selectedKs = releaseKs.firstOrNull { it.id == p.selectedKeystoreId }
+
+    PlayStoreReadinessCard(readiness, onJump)
 
     SectionCard("Format Output", Icons.Rounded.RocketLaunch, "Dipakai tombol \"Build Sekarang\" di bawah") {
         OptionCard(Icons.Rounded.Bolt, "Debug APK", "Cepat untuk uji coba • selalu debug key", target == BuildType.APK_DEBUG) { onTarget(BuildType.APK_DEBUG) }
@@ -1097,19 +1172,7 @@ private fun BuildPage(
 
     SecondaryButton("Quick Build & Test (Debug Key)", onClick = onQuickBuild, icon = Icons.Rounded.Bolt, modifier = Modifier.fillMaxWidth(), enabled = !errors.hasErrors)
 
-    SectionCard("Riwayat Build", Icons.Rounded.History) {
-        if (builds.isEmpty()) {
-            Text("Belum ada build untuk proyek ini.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        }
-        builds.take(15).forEach { b ->
-            BuildRecordRow(
-                b,
-                onInstall = { FileActions.installApk(ctx, File(b.outputFilePath!!)) },
-                onShare = { FileActions.share(ctx, File(b.outputFilePath!!)) },
-                onExport = { exportFile = File(b.outputFilePath!!); exporter.launch(File(b.outputFilePath!!).name) }
-            )
-        }
-    }
+    BuildHistorySection(p, builds) { f -> exportFile = f; exporter.launch(f.name) }
 }
 
 @Composable
@@ -1407,6 +1470,11 @@ private fun SdkPage(p: WebProjectEntity, update: Updater, vm: StudioViewModel) {
             "Koordinat Maven (satu per baris)", p.extraDependencies, { v -> update { it.copy(extraDependencies = v) } },
             mono = true, singleLine = false, placeholder = "com.squareup.okhttp3:okhttp:4.12.0",
             supporting = "Dependensi transitif ikut diunduh otomatis • baris diawali # diabaikan"
+        )
+        LabeledField(
+            "Kecualikan library (group:artifact per baris)", p.excludedDependencies, { v -> update { it.copy(excludedDependencies = v) } },
+            mono = true, singleLine = false, placeholder = "com.google.android.gms:play-services-measurement",
+            supporting = "Untuk memperkecil APK: library transitif yang tidak dipakai. Lihat daftar penyumbang ukuran terbesar di log build."
         )
         libs.forEach { path ->
             Row(verticalAlignment = Alignment.CenterVertically) {

@@ -9,7 +9,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
 
 @Database(
     entities = [WebProjectEntity::class, KeystoreEntity::class, BuildRecordEntity::class, ChatMessageEntity::class],
-    version = 3,
+    version = 4,
     exportSchema = false
 )
 abstract class WebifyDatabase : RoomDatabase() {
@@ -47,9 +47,20 @@ abstract class WebifyDatabase : RoomDatabase() {
             }
         }
 
+        /** v3 → v4: library opsional yang dikecualikan, riwayat build terperinci. */
+        val MIGRATION_3_4 = object : Migration(3, 4) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE web_projects ADD COLUMN `excludedDependencies` TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE build_records ADD COLUMN `versionCode` INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE build_records ADD COLUMN `versionName` TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE build_records ADD COLUMN `stageTimingsJson` TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE build_records ADD COLUMN `configSnapshotJson` TEXT NOT NULL DEFAULT ''")
+            }
+        }
+
         fun create(context: Context): WebifyDatabase =
             Room.databaseBuilder(context.applicationContext, WebifyDatabase::class.java, "webify.db")
-                .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
                 .fallbackToDestructiveMigrationOnDowngrade()
                 .build()
     }

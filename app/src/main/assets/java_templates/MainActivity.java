@@ -72,6 +72,7 @@ public class MainActivity extends Activity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        WebifyCrashReporter.install(this);
         setupWindow();
         buildLayout();
         setupWebView();
@@ -95,6 +96,7 @@ public class MainActivity extends Activity {
                 && checkSelfPermission("android.permission.POST_NOTIFICATIONS") != PackageManager.PERMISSION_GRANTED) {
             requestPermissions(new String[]{"android.permission.POST_NOTIFICATIONS"}, REQ_PERMISSIONS_NOTIF);
         }
+        WebifyCrashReporter.offerPendingReport(this);
     }
 
     // ------------------------------------------------------------------ Window & layout
@@ -708,10 +710,13 @@ public class MainActivity extends Activity {
         super.onResume();
         webView.onResume();
         webView.resumeTimers();
+        registerNetworkWatcher();
+        if (showingOffline && isOnline()) retry();
     }
 
     @Override
     protected void onPause() {
+        unregisterNetworkWatcher();
         webView.onPause();
         CookieManager.getInstance().flush();
         super.onPause();
@@ -734,6 +739,41 @@ public class MainActivity extends Activity {
             Log.w(TAG, "destroy webview", e);
         }
         super.onDestroy();
+    }
+
+    // ------------------------------------------------------------------ Auto-reload saat koneksi kembali
+    private ConnectivityManager.NetworkCallback networkCallback;
+
+    private void registerNetworkWatcher() {
+        if (Build.VERSION.SDK_INT < 24 || networkCallback != null || BuildConfig.IS_LOCAL_SOURCE) return;
+        try {
+            ConnectivityManager cm = (ConnectivityManager) getSystemService(Context.CONNECTIVITY_SERVICE);
+            if (cm == null) return;
+            networkCallback = new ConnectivityManager.NetworkCallback() {
+                @Override
+                public void onAvailable(android.net.Network network) {
+                    handler.postDelayed(new Runnable() {
+                        @Override
+                        public void run() {
+                            if (showingOffline && isOnline()) retry();
+                        }
+                    }, 800);
+                }
+            };
+            cm.registerDefaultNetworkCallback(networkCallback);
+        } catch (Exception e) {
+            networkCallback = null;
+            Log.w(TAG, "network watcher", e);
+        }
+    }
+
+    private void unregisterNetworkWatcher() {
+        if (networkCallback == null) return;
+        try {
+            ConnectivityManager cm = (ConnectivityManager) getSystemService(Context.CONNECTIVITY_SERVICE);
+            if (cm != null) cm.unregisterNetworkCallback(networkCallback);
+        } catch (Exception ignored) { }
+        networkCallback = null;
     }
 
     // ------------------------------------------------------------------ Util
