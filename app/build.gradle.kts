@@ -62,7 +62,9 @@ android {
             isMinifyEnabled = false
         }
         release {
-            isMinifyEnabled = true
+            // R8 menolak bundletool/r8 karena JAR-nya berisi DEX + bytecode sekaligus,
+            // dan seluruh toolchain harus di-keep penuh; minify tidak memberi manfaat berarti.
+            isMinifyEnabled = false
             isShrinkResources = false
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
             // Fallback ke debug signing agar build CI tidak pernah gagal karena secret kosong.
