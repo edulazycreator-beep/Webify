@@ -136,5 +136,5 @@ object PlayStoreChecker {
     }.sortedBy { it.severity.ordinal }
 
     fun score(issues: List<Issue>): Int =
-        (100 - issues.sumOf { when (it.severity) { Severity.ERROR -> 25; Severity.WARNING -> 8; Severity.INFO -> 0 } }.toInt()).coerceIn(0, 100)
+        (100 - issues.fold(0) { acc, i -> acc + when (i.severity) { Severity.ERROR -> 25; Severity.WARNING -> 8; Severity.INFO -> 0 } }).coerceIn(0, 100)
 }
