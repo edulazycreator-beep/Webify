@@ -72,6 +72,12 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.foundation.layout.heightIn
+import com.webify.app.ui.components.PrimaryButton
+import com.webify.app.ui.components.SecondaryButton
+import com.webify.app.ui.theme.Dimens
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.webify.app.AppContainer
 import com.webify.app.crypto.DistinguishedName
@@ -124,23 +130,27 @@ fun KeystoreVaultScreen(container: AppContainer) {
     ) { pad ->
         LazyColumn(
             Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = pad.calculateTopPadding() + 8.dp, bottom = pad.calculateBottomPadding() + 96.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
+            contentPadding = PaddingValues(
+                start = Dimens.ScreenPadding, end = Dimens.ScreenPadding,
+                top = pad.calculateTopPadding() + 8.dp, bottom = pad.calculateBottomPadding() + 96.dp
+            ),
+            verticalArrangement = Arrangement.spacedBy(Dimens.SectionGap)
         ) {
             item {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Column(Modifier.weight(1f)) {
-                        Text("Keystore Vault", style = MaterialTheme.typography.headlineMedium)
-                        Text("Kunci penandatanganan digital untuk APK & AAB", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Row(Modifier.fillMaxWidth().padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f).padding(end = 12.dp)) {
+                        Text("Keystore Vault", style = MaterialTheme.typography.titleLarge, maxLines = 1)
+                        Text(
+                            "Kunci penandatanganan digital untuk APK & AAB", style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis
+                        )
                     }
-                    OutlinedButton(onClick = { importPicker.launch(arrayOf("*/*")) }) {
-                        Icon(Icons.Rounded.FileUpload, null, Modifier.size(20.dp)); Spacer(Modifier.width(6.dp)); Text("Impor")
-                    }
+                    SecondaryButton("Impor", onClick = { importPicker.launch(arrayOf("*/*")) }, icon = Icons.Rounded.FileUpload)
                 }
                 if (busy) LinearProgressIndicator(Modifier.fillMaxWidth().padding(top = 12.dp))
             }
             item {
-                Surface(color = MaterialTheme.colorScheme.primaryContainer, shape = MaterialTheme.shapes.medium) {
+                Surface(color = MaterialTheme.colorScheme.primaryContainer, shape = RoundedCornerShape(Dimens.RadiusControl), modifier = Modifier.fillMaxWidth()) {
                     Text(
                         "Simpan cadangan keystore rilis & password-nya di tempat aman. Kehilangan upload key berarti harus mengajukan reset ke Google Play.",
                         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onPrimaryContainer, modifier = Modifier.padding(12.dp)
@@ -177,42 +187,51 @@ fun KeystoreVaultScreen(container: AppContainer) {
 @Composable
 private fun KeystoreCard(ks: KeystoreEntity, onCopy: (String, String) -> Unit, onExport: () -> Unit, onDelete: () -> Unit) {
     Surface(
-        shape = MaterialTheme.shapes.large,
+        shape = RoundedCornerShape(Dimens.RadiusCard),
         color = MaterialTheme.colorScheme.surface,
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+        modifier = Modifier.fillMaxWidth()
     ) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Column(Modifier.padding(Dimens.CardPadding), verticalArrangement = Arrangement.spacedBy(Dimens.FieldGap)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Box(
-                    Modifier.size(40.dp).clip(RoundedCornerShape(12.dp))
+                    Modifier.size(44.dp).clip(RoundedCornerShape(Dimens.RadiusControl))
                         .background(if (ks.isDebugDefault) MaterialTheme.colorScheme.surfaceContainer else MaterialTheme.colorScheme.tertiaryContainer),
                     contentAlignment = Alignment.Center
                 ) {
-                    Icon(if (ks.isDebugDefault) Icons.Rounded.Key else Icons.Rounded.Shield, null,
+                    Icon(if (ks.isDebugDefault) Icons.Rounded.Key else Icons.Rounded.Shield, null, Modifier.size(Dimens.IconBar),
                         tint = if (ks.isDebugDefault) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onTertiaryContainer)
                 }
-                Spacer(Modifier.width(12.dp))
-                Column(Modifier.weight(1f)) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(ks.name, style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f, false))
-                        Spacer(Modifier.width(8.dp))
-                        if (ks.isDebugDefault) Pill("DEBUG", MaterialTheme.colorScheme.surfaceContainer, MaterialTheme.colorScheme.onSurfaceVariant)
-                        else Pill("RELEASE", MaterialTheme.colorScheme.tertiaryContainer, MaterialTheme.colorScheme.onTertiaryContainer)
-                    }
-                    Text("alias: ${ks.keyAlias} • ${ks.keyAlgorithm.label} • ${ks.validityYears} thn",
-                        style = WebifyTheme.mono.copy(fontSize = MaterialTheme.typography.bodySmall.fontSize), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Spacer(Modifier.width(Dimens.IconTextGap))
+                Column(Modifier.weight(1f).padding(end = 12.dp)) {
+                    Text(ks.name, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text(
+                        "alias: ${ks.keyAlias} • ${ks.keyAlgorithm.label} • ${ks.validityYears} thn",
+                        style = WebifyTheme.mono.copy(fontSize = 12.sp, lineHeight = 16.sp), color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1, overflow = TextOverflow.Ellipsis
+                    )
                 }
+                if (ks.isDebugDefault) Pill("DEBUG", MaterialTheme.colorScheme.surfaceContainer, MaterialTheme.colorScheme.onSurfaceVariant)
+                else Pill("RELEASE", MaterialTheme.colorScheme.tertiaryContainer, MaterialTheme.colorScheme.onTertiaryContainer)
             }
             val dn = listOf("CN" to ks.commonName, "OU" to ks.organizationalUnit, "O" to ks.organization, "L" to ks.locality, "ST" to ks.state, "C" to ks.countryCode)
                 .filter { it.second.isNotBlank() }.joinToString(", ") { "${it.first}=${it.second}" }
-            if (dn.isNotEmpty()) Text(dn, style = MaterialTheme.typography.bodySmall)
+            if (dn.isNotEmpty()) Text(dn, style = MaterialTheme.typography.bodySmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
             Fingerprint("SHA-1", ks.sha1Fingerprint, onCopy)
             Fingerprint("SHA-256", ks.sha256Fingerprint, onCopy)
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("Dibuat " + DateFormat.getDateInstance(DateFormat.MEDIUM).format(Date(ks.createdAt)),
-                    style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
-                IconButton(onClick = onExport) { Icon(Icons.Rounded.Download, "Ekspor/Backup", Modifier.size(20.dp)) }
-                if (!ks.isDebugDefault) IconButton(onClick = onDelete) { Icon(Icons.Rounded.Delete, "Hapus", Modifier.size(20.dp), tint = MaterialTheme.colorScheme.error) }
+                Text(
+                    "Dibuat " + DateFormat.getDateInstance(DateFormat.MEDIUM).format(Date(ks.createdAt)),
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.weight(1f).padding(end = 12.dp), maxLines = 1
+                )
+                SecondaryButton("Backup", onClick = onExport, icon = Icons.Rounded.Download)
+                if (!ks.isDebugDefault) {
+                    Spacer(Modifier.width(8.dp))
+                    IconButton(onClick = onDelete, modifier = Modifier.size(40.dp)) {
+                        Icon(Icons.Rounded.Delete, "Hapus", Modifier.size(Dimens.IconInline), tint = MaterialTheme.colorScheme.error)
+                    }
+                }
             }
         }
     }
@@ -220,15 +239,18 @@ private fun KeystoreCard(ks: KeystoreEntity, onCopy: (String, String) -> Unit, o
 
 @Composable
 private fun Fingerprint(label: String, value: String, onCopy: (String, String) -> Unit) {
-    Surface(color = MaterialTheme.colorScheme.surfaceContainer, shape = MaterialTheme.shapes.medium) {
-        Row(Modifier.fillMaxWidth().padding(start = 12.dp, top = 8.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-            Icon(Icons.Rounded.Fingerprint, null, Modifier.size(20.dp), tint = MaterialTheme.colorScheme.primary)
-            Spacer(Modifier.width(10.dp))
-            Column(Modifier.weight(1f)) {
+    Surface(color = MaterialTheme.colorScheme.surfaceContainer, shape = RoundedCornerShape(Dimens.RadiusSmall), modifier = Modifier.fillMaxWidth()) {
+        Row(Modifier.fillMaxWidth().padding(start = 12.dp, end = 4.dp, top = 8.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+            Icon(Icons.Rounded.Fingerprint, null, Modifier.size(Dimens.IconInline), tint = MaterialTheme.colorScheme.primary)
+            Spacer(Modifier.width(Dimens.IconTextGap))
+            Column(Modifier.weight(1f).padding(end = 8.dp)) {
                 Text(label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, fontWeight = FontWeight.SemiBold)
-                Text(value, style = WebifyTheme.mono.copy(fontSize = MaterialTheme.typography.labelSmall.fontSize))
+                // Mono 11sp; hash dibiarkan wrap ke baris berikut agar tidak terpotong
+                Text(value, style = WebifyTheme.mono.copy(fontSize = 11.sp, lineHeight = 15.sp))
             }
-            IconButton(onClick = { onCopy(label, value) }) { Icon(Icons.Rounded.ContentCopy, "Salin $label", Modifier.size(20.dp)) }
+            IconButton(onClick = { onCopy(label, value) }, modifier = Modifier.size(Dimens.IconButtonSmall)) {
+                Icon(Icons.Rounded.ContentCopy, "Salin $label", Modifier.size(18.dp))
+            }
         }
     }
 }
@@ -258,10 +280,10 @@ private fun CreateKeystoreSheet(busy: Boolean, onDismiss: () -> Unit, onCreate: 
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState) {
         Column(
             Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).imePadding().navigationBarsPadding()
-                .padding(horizontal = 20.dp, vertical = 8.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp)
+                .padding(horizontal = Dimens.ScreenPadding, vertical = 8.dp),
+            verticalArrangement = Arrangement.spacedBy(Dimens.FieldGap)
         ) {
-            Text("Keystore Rilis Baru", style = MaterialTheme.typography.headlineSmall)
+            Text("Keystore Rilis Baru", style = MaterialTheme.typography.titleLarge)
             Text("Sertifikat X.509 self-signed (SHA256withRSA) untuk Google Play upload key.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             LabeledField("Nama keystore", name, { name = it }, placeholder = "Toko Saya Release")
             val visual = if (showPw) VisualTransformation.None else PasswordVisualTransformation()
@@ -278,14 +300,15 @@ private fun CreateKeystoreSheet(busy: Boolean, onDismiss: () -> Unit, onCreate: 
             LabeledField("Common Name (CN)", cn, { cn = it }, placeholder = "Nama Anda / Perusahaan")
             LabeledField("Organizational Unit (OU)", ou, { ou = it })
             LabeledField("Organization (O)", o, { o = it })
-            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            Row(horizontalArrangement = Arrangement.spacedBy(Dimens.FieldGap)) {
                 LabeledField("Kota (L)", l, { l = it }, modifier = Modifier.weight(1f))
                 LabeledField("Provinsi (ST)", st, { st = it }, modifier = Modifier.weight(1f))
             }
             LabeledField("Kode negara (C)", c, { c = it.filter(Char::isLetter).take(2).uppercase() }, mono = true,
                 error = if (c.isNotEmpty() && c.length != 2) "2 huruf, mis. ID" else null)
             Spacer(Modifier.height(4.dp))
-            Button(
+            PrimaryButton(
+                text = if (busy) "Membuat kunci${if (algorithm == KeyAlgorithm.RSA_4096) " (RSA-4096 butuh beberapa detik)" else ""}…" else "Generate Keystore",
                 onClick = {
                     onCreate(
                         ReleaseKeystoreRequest(
@@ -296,8 +319,8 @@ private fun CreateKeystoreSheet(busy: Boolean, onDismiss: () -> Unit, onCreate: 
                     )
                 },
                 enabled = valid && !busy,
-                modifier = Modifier.fillMaxWidth().height(52.dp)
-            ) { Text(if (busy) "Membuat kunci${if (algorithm == KeyAlgorithm.RSA_4096) " (RSA-4096 butuh beberapa detik)" else ""}…" else "Generate Keystore") }
+                modifier = Modifier.fillMaxWidth()
+            )
             Spacer(Modifier.height(16.dp))
         }
     }
@@ -313,8 +336,13 @@ private fun PasswordField(
         visualTransformation = visual, singleLine = true, isError = error != null,
         supportingText = if (error != null) { { Text(error) } } else null,
         keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = KeyboardType.Password),
-        trailingIcon = { IconButton(onClick = onToggle) { Icon(if (shown) Icons.Rounded.VisibilityOff else Icons.Rounded.Visibility, null) } },
-        modifier = Modifier.fillMaxWidth(), shape = MaterialTheme.shapes.medium
+        trailingIcon = {
+            IconButton(onClick = onToggle) {
+                Icon(if (shown) Icons.Rounded.VisibilityOff else Icons.Rounded.Visibility, if (shown) "Sembunyikan" else "Tampilkan", Modifier.size(Dimens.IconInline))
+            }
+        },
+        textStyle = MaterialTheme.typography.bodyMedium,
+        modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp), shape = RoundedCornerShape(Dimens.RadiusControl)
     )
 }
 
@@ -335,18 +363,21 @@ private fun ImportDialog(uri: Uri, vm: VaultViewModel, onDismiss: () -> Unit) {
         icon = { Icon(Icons.Rounded.FileUpload, null) },
         title = { Text("Impor Keystore") },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text(uri.lastPathSegment ?: uri.toString(), style = WebifyTheme.mono.copy(fontSize = MaterialTheme.typography.labelSmall.fontSize))
+            Column(verticalArrangement = Arrangement.spacedBy(Dimens.FieldGap)) {
+                Text(
+                    uri.lastPathSegment ?: uri.toString(), style = WebifyTheme.mono.copy(fontSize = 12.sp, lineHeight = 16.sp),
+                    maxLines = 1, overflow = TextOverflow.Ellipsis
+                )
                 LabeledField("Nama", name, { name = it })
                 PasswordField("Keystore password", storePw, { storePw = it; aliases = emptyList() }, visual, show, { show = !show }, null)
                 if (aliases.isEmpty()) {
-                    OutlinedButton(onClick = {
+                    SecondaryButton("Validasi & baca alias", modifier = Modifier.fillMaxWidth(), enabled = storePw.isNotEmpty(), onClick = {
                         scope.launch {
                             vm.aliases(uri, storePw)
                                 .onSuccess { aliases = it; alias = it.firstOrNull() ?: ""; error = if (it.isEmpty()) "Tidak ada private key" else null }
                                 .onFailure { error = it.message }
                         }
-                    }, enabled = storePw.isNotEmpty()) { Text("Validasi & baca alias") }
+                    })
                 } else {
                     SelectField("Alias", aliases, alias, { it }, { alias = it })
                     PasswordField("Key password (kosong = sama)", keyPw, { keyPw = it }, visual, show, { show = !show }, null)

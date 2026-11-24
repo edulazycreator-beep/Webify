@@ -113,6 +113,23 @@ class SecurePrefs(private val context: Context) {
         _ai.value = readAi()
     }
 
+    // ---------- Cache daftar model AI ----------
+    fun cachedModels(provider: AiProvider, baseUrl: String): List<String> {
+        val key = "models_${provider.name}_${baseUrl.trim().trimEnd('/').hashCode()}"
+        return plain.getString(key, null)?.split('\n')?.filter { it.isNotBlank() }.orEmpty()
+    }
+
+    fun modelsFetchedAt(provider: AiProvider, baseUrl: String): Long =
+        plain.getLong("models_at_${provider.name}_${baseUrl.trim().trimEnd('/').hashCode()}", 0L)
+
+    fun saveModels(provider: AiProvider, baseUrl: String, models: List<String>) {
+        val h = baseUrl.trim().trimEnd('/').hashCode()
+        plain.edit()
+            .putString("models_${provider.name}_$h", models.joinToString("\n"))
+            .putLong("models_at_${provider.name}_$h", System.currentTimeMillis())
+            .apply()
+    }
+
     // ---------- UI ----------
     private fun readUi(): UiSettings {
         val mode = plain.getInt("dark_mode", -1)

@@ -72,6 +72,16 @@ object MarkdownParser {
     }
 }
 
+/** Daftar model untuk pengaturan AI (diambil otomatis dari API provider). */
+data class ModelListState(
+    val provider: AiProvider? = null,
+    val baseUrl: String = "",
+    val loading: Boolean = false,
+    val models: List<String> = emptyList(),
+    val error: String? = null,
+    val fetchedAt: Long = 0L
+)
+
 data class AiUiState(
     val projects: List<WebProjectEntity> = emptyList(),
     val activeProject: WebProjectEntity? = null,
@@ -96,6 +106,9 @@ class AiAssistantViewModel(
     private val _events = MutableSharedFlow<String>(extraBufferCapacity = 8)
     val events: SharedFlow<String> = _events.asSharedFlow()
     private var streamJob: Job? = null
+    private var modelsJob: Job? = null
+    private val _models = MutableStateFlow(ModelListState())
+    val models: StateFlow<ModelListState> = _models.asStateFlow()
 
     private val conversationId get() = activeProjectId.value?.let { "project:$it" } ?: "general"
 
@@ -111,6 +124,43 @@ class AiAssistantViewModel(
 
     init {
         consumePending()
+        autoRefreshModels()
+    }
+
+    /** Muat cache; ambil ulang otomatis bila cache kosong / lebih tua dari 12 jam. */
+    private fun autoRefreshModels() {
+        val s = prefs.aiSettings.value
+        loadCachedModels(s)
+        val age = System.currentTimeMillis() - prefs.modelsFetchedAt(s.provider, s.baseUrl)
+        if (s.isConfigured && (_models.value.models.isEmpty() || age > MODEL_CACHE_TTL)) refreshModels(s, silent = true)
+    }
+
+    fun loadCachedModels(s: AiSettings) {
+        modelsJob?.cancel()
+        _models.value = ModelListState(
+            provider = s.provider, baseUrl = s.baseUrl,
+            models = prefs.cachedModels(s.provider, s.baseUrl),
+            fetchedAt = prefs.modelsFetchedAt(s.provider, s.baseUrl)
+        )
+    }
+
+    /** Ambil daftar model dari API provider (tombol refresh / otomatis). */
+    fun refreshModels(s: AiSettings, silent: Boolean = false) {
+        modelsJob?.cancel()
+        _models.value = _models.value.copy(provider = s.provider, baseUrl = s.baseUrl, loading = true, error = null)
+        modelsJob = viewModelScope.launch {
+            try {
+                val list = ai.listModels(s)
+                prefs.saveModels(s.provider, s.baseUrl, list)
+                _models.value = ModelListState(s.provider, s.baseUrl, false, list, null, System.currentTimeMillis())
+                if (!silent) _events.emit("${list.size} model ditemukan")
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                _models.value = _models.value.copy(loading = false, error = e.message ?: "Gagal mengambil model")
+                if (!silent) _events.emit("Gagal mengambil model: ${e.message}")
+            }
+        }
     }
 
     fun consumePending() {
@@ -204,6 +254,7 @@ class AiAssistantViewModel(
 
     fun saveSettings(s: AiSettings) {
         prefs.saveAi(s)
+        if (_models.value.models.isEmpty() || _models.value.provider != s.provider) refreshModels(s, silent = true)
         viewModelScope.launch { _events.emit("Pengaturan AI disimpan") }
     }
 
@@ -218,5 +269,6 @@ class AiAssistantViewModel(
 
     companion object {
         private const val HISTORY_LIMIT = 20
+        private const val MODEL_CACHE_TTL = 12 * 60 * 60 * 1000L
     }
 }

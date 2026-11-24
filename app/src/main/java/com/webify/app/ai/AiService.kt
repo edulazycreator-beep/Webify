@@ -11,10 +11,12 @@ import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.job
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.add
 import kotlinx.serialization.json.addJsonObject
 import kotlinx.serialization.json.buildJsonObject
@@ -97,6 +99,79 @@ class AiService(private val prefs: SecurePrefs) {
             handle.dispose()
         }
     }.flowOn(Dispatchers.IO)
+
+    /**
+     * Mengambil daftar model yang tersedia untuk akun/endpoint.
+     *  - Gemini : GET {base}/models (hanya model yang mendukung generateContent)
+     *  - OpenAI / Custom : GET {base}/models (field data[].id)
+     */
+    suspend fun listModels(s: AiSettings): List<String> = withContext(Dispatchers.IO) {
+        if (s.provider != AiProvider.CUSTOM && s.apiKey.isBlank())
+            throw AiException("Isi API key ${s.provider.label} terlebih dahulu")
+        val base = s.baseUrl.trim().trimEnd('/')
+        if (!(base.startsWith("http://") || base.startsWith("https://"))) throw AiException("Base URL tidak valid")
+        val result = mutableListOf<String>()
+        when (s.provider) {
+            AiProvider.GEMINI -> {
+                var pageToken: String? = null
+                var pages = 0
+                do {
+                    val url = "$base/models?pageSize=1000" + (pageToken?.let { "&pageToken=$it" } ?: "")
+                    val req = Request.Builder().url(url).header("x-goog-api-key", s.apiKey.trim()).get().build()
+                    val obj = executeJson(req)
+                    obj["models"]?.jsonArray?.forEach { el ->
+                        val m = el.jsonObject
+                        val methods = m["supportedGenerationMethods"]?.jsonArray?.mapNotNull { it.jsonPrimitive.contentOrNull }.orEmpty()
+                        val name = m["name"]?.jsonPrimitive?.contentOrNull?.removePrefix("models/")
+                        if (name != null && (methods.isEmpty() || "generateContent" in methods)) result += name
+                    }
+                    pageToken = obj["nextPageToken"]?.jsonPrimitive?.contentOrNull?.takeIf { it.isNotBlank() }
+                    pages++
+                } while (pageToken != null && pages < 10)
+            }
+            AiProvider.OPENAI, AiProvider.CUSTOM -> {
+                val b = Request.Builder().url("$base/models").get()
+                if (s.apiKey.isNotBlank()) b.header("Authorization", "Bearer ${s.apiKey.trim()}")
+                val obj = executeJson(b.build())
+                val ids = (obj["data"] ?: obj["models"])?.jsonArray?.mapNotNull { el ->
+                    (el as? JsonObject)?.let { it["id"] ?: it["name"] ?: it["model"] }?.jsonPrimitive?.contentOrNull
+                        ?: (el as? JsonPrimitive)?.contentOrNull
+                }.orEmpty()
+                result += if (s.provider == AiProvider.OPENAI) ids.filter { isOpenAiChatModel(it) } else ids
+            }
+        }
+        if (result.isEmpty()) throw AiException("Tidak ada model chat yang tersedia untuk kunci/endpoint ini")
+        result.distinct().sortedWith(compareBy<String>({ modelRank(it) }, { it }))
+    }
+
+    private fun executeJson(req: Request): JsonObject {
+        try {
+            client.newCall(req).execute().use { resp ->
+                val body = resp.body?.string().orEmpty()
+                if (!resp.isSuccessful) throw AiException("HTTP ${resp.code}: ${extractError(body) ?: resp.message}")
+                val el = json.parseToJsonElement(body)
+                return el as? JsonObject ?: buildJsonObject { put("data", el) }
+            }
+        } catch (e: IOException) {
+            throw AiException("Koneksi gagal: ${e.message}", e)
+        }
+    }
+
+    private fun isOpenAiChatModel(id: String): Boolean {
+        val l = id.lowercase()
+        val excluded = listOf("embedding", "tts", "whisper", "dall-e", "moderation", "image", "audio", "realtime", "transcribe", "search", "davinci", "babbage")
+        return (l.startsWith("gpt") || l.startsWith("chatgpt") || l.matches(Regex("^o\\d.*"))) && excluded.none { it in l }
+    }
+
+    /** Urutkan agar model "flash/mini/terbaru" muncul di atas, varian eksperimental di bawah. */
+    private fun modelRank(id: String): Int {
+        val l = id.lowercase()
+        return when {
+            "exp" in l || "preview" in l -> 2
+            "flash" in l || "mini" in l -> 0
+            else -> 1
+        }
+    }
 
     /** Uji koneksi singkat untuk layar pengaturan. */
     suspend fun testConnection(s: AiSettings): String {

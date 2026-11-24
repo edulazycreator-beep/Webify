@@ -77,6 +77,11 @@ import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.compose.ui.text.style.TextOverflow
+import com.webify.app.ui.components.PrimaryButton
+import com.webify.app.ui.components.SecondaryButton
+import com.webify.app.ui.theme.Dimens
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.webify.app.AppContainer
 import com.webify.app.ai.CopilotRequest
@@ -108,8 +113,13 @@ fun BuildConsoleScreen(container: AppContainer, onBack: () -> Unit, onAnalyzeWit
                 navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Rounded.ArrowBack, "Kembali") } },
                 title = {
                     Column {
-                        Text("Live Build Console", style = MaterialTheme.typography.titleMedium)
-                        session?.let { Text("${it.projectName} • ${it.buildType.label}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+                        Text("Live Build Console", style = MaterialTheme.typography.titleLarge, maxLines = 1)
+                        session?.let {
+                            Text(
+                                "${it.projectName} • ${it.buildType.label}", style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis
+                            )
+                        }
                     }
                 },
                 actions = {
@@ -137,7 +147,7 @@ fun BuildConsoleScreen(container: AppContainer, onBack: () -> Unit, onAnalyzeWit
             }
             return@Scaffold
         }
-        Column(Modifier.fillMaxSize().padding(pad).padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Column(Modifier.fillMaxSize().padding(pad).padding(horizontal = Dimens.ScreenPadding), verticalArrangement = Arrangement.spacedBy(Dimens.SectionGap)) {
             ProgressHeader(s)
             StageStepper(s)
             TerminalPanel(s.logs, Modifier.weight(1f))
@@ -174,7 +184,7 @@ private fun ProgressHeader(s: BuildSession) {
         else -> MaterialTheme.colorScheme.primary
     }
     Column {
-        Row(verticalAlignment = Alignment.Bottom) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
                 when {
                     s.running -> s.activeStage?.let { "Tahap ${it.ordinal + 1}/7 • ${it.label}" } ?: "Menyiapkan…"
@@ -182,7 +192,8 @@ private fun ProgressHeader(s: BuildSession) {
                     s.result is BuildResult.Success -> "Build berhasil"
                     else -> "Dihentikan"
                 },
-                style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f)
+                style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f).padding(end = 12.dp)
             )
             Text("${s.percent}%", style = WebifyTheme.mono.copy(fontWeight = FontWeight.Bold), color = color)
         }
@@ -195,13 +206,11 @@ private fun ProgressHeader(s: BuildSession) {
     }
 }
 
+/** Stepper 7 tahap yang ringkas: titik 22dp + label 10sp, tinggi total ±44dp. */
 @Composable
 private fun StageStepper(s: BuildSession) {
     val pulse = rememberInfiniteTransition(label = "pulse").animateFloat(0.35f, 1f, infiniteRepeatable(tween(700), RepeatMode.Reverse), label = "a")
-    Row(
-        Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top) {
         BuildStage.entries.forEachIndexed { i, st ->
             val done = st in s.completedStages
             val active = st == s.activeStage && s.running
@@ -212,25 +221,43 @@ private fun StageStepper(s: BuildSession) {
                 active -> MaterialTheme.colorScheme.primary
                 else -> MaterialTheme.colorScheme.outlineVariant
             }
-            Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.width(76.dp)) {
-                Box(
-                    Modifier.size(30.dp).clip(CircleShape)
-                        .background(if (done || failed) c else Color.Transparent)
-                        .border(2.dp, c, CircleShape)
-                        .alpha(if (active) pulse.value else 1f),
-                    contentAlignment = Alignment.Center
-                ) {
-                    when {
-                        failed -> Icon(Icons.Rounded.Close, null, Modifier.size(16.dp), tint = MaterialTheme.colorScheme.onError)
-                        done -> Icon(Icons.Rounded.Check, null, Modifier.size(16.dp), tint = MaterialTheme.colorScheme.onSecondary)
-                        else -> Text("${i + 1}", style = WebifyTheme.mono.copy(fontWeight = FontWeight.Bold), color = c)
+            Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.weight(1f)) {
+                Row(Modifier.fillMaxWidth().height(22.dp), verticalAlignment = Alignment.CenterVertically) {
+                    // garis penghubung kiri
+                    Box(
+                        Modifier.weight(1f).height(2.dp).background(
+                            if (i == 0) Color.Transparent
+                            else if (done || active || failed) c else MaterialTheme.colorScheme.outlineVariant
+                        )
+                    )
+                    Box(
+                        Modifier.size(22.dp).clip(CircleShape)
+                            .background(if (done || failed) c else Color.Transparent)
+                            .border(2.dp, c, CircleShape)
+                            .alpha(if (active) pulse.value else 1f),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        when {
+                            failed -> Icon(Icons.Rounded.Close, null, Modifier.size(12.dp), tint = MaterialTheme.colorScheme.onError)
+                            done -> Icon(Icons.Rounded.Check, null, Modifier.size(12.dp), tint = MaterialTheme.colorScheme.onSecondary)
+                            else -> Text("${i + 1}", style = WebifyTheme.mono.copy(fontSize = 10.sp, lineHeight = 12.sp, fontWeight = FontWeight.Bold), color = c)
+                        }
                     }
+                    // garis penghubung kanan
+                    Box(
+                        Modifier.weight(1f).height(2.dp).background(
+                            if (i == BuildStage.entries.lastIndex) Color.Transparent
+                            else if (done) c else MaterialTheme.colorScheme.outlineVariant
+                        )
+                    )
                 }
                 Spacer(Modifier.height(4.dp))
-                Text(st.label, style = MaterialTheme.typography.labelSmall, color = if (active) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
-            }
-            if (i < BuildStage.entries.lastIndex) {
-                Box(Modifier.width(10.dp).height(2.dp).padding(bottom = 18.dp).background(if (done) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.outlineVariant))
+                Text(
+                    st.label.substringBefore(' ').let { if (st == BuildStage.PACKAGE) "Sign" else it },
+                    style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp, lineHeight = 12.sp),
+                    color = if (active) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1, overflow = TextOverflow.Ellipsis
+                )
             }
         }
     }
@@ -259,7 +286,7 @@ private fun TerminalPanel(logs: List<LogLine>, modifier: Modifier) {
     Surface(
         modifier = modifier.fillMaxWidth(),
         color = TerminalColors.Background,
-        shape = MaterialTheme.shapes.large,
+        shape = RoundedCornerShape(Dimens.RadiusSmall),
         border = BorderStroke(1.dp, TerminalColors.Border)
     ) {
         Box {
@@ -273,8 +300,9 @@ private fun TerminalPanel(logs: List<LogLine>, modifier: Modifier) {
                     Spacer(Modifier.weight(1f))
                     Text("${logs.size} baris", style = WebifyTheme.mono.copy(fontSize = MaterialTheme.typography.labelSmall.fontSize), color = TerminalColors.Timestamp)
                 }
-                val mono = WebifyTheme.mono.copy(fontSize = MaterialTheme.typography.labelMedium.fontSize)
-                LazyColumn(state = listState, contentPadding = PaddingValues(12.dp), modifier = Modifier.fillMaxSize()) {
+                // JetBrains Mono 11.5sp / line-height 16sp: padat namun tidak dempet
+                val mono = WebifyTheme.mono.copy(fontSize = 11.5.sp, lineHeight = 16.sp)
+                LazyColumn(state = listState, contentPadding = PaddingValues(horizontal = 12.dp, vertical = 10.dp), modifier = Modifier.fillMaxSize()) {
                     itemsIndexed(logs) { _, line ->
                         val c = when (line.level) {
                             LogLevel.INFO -> TerminalColors.Info
@@ -289,8 +317,7 @@ private fun TerminalPanel(logs: List<LogLine>, modifier: Modifier) {
                                 withStyle(SpanStyle(color = c, fontWeight = FontWeight.Bold)) { append(line.level.name.padEnd(7)) }
                                 withStyle(SpanStyle(color = if (line.level == LogLevel.DEBUG) TerminalColors.Debug else TerminalColors.Text)) { append(" "); append(line.message) }
                             },
-                            style = mono,
-                            modifier = Modifier.padding(vertical = 1.dp)
+                            style = mono
                         )
                     }
                 }
@@ -317,60 +344,56 @@ private fun PostBuildCard(r: BuildResult, s: BuildSession, onAnalyze: () -> Unit
                 if (uri != null) FileActions.toast(ctx, if (FileActions.exportTo(ctx, r.outputFile, uri)) "Diekspor ke penyimpanan" else "Ekspor gagal")
             }
             Surface(
-                shape = MaterialTheme.shapes.large,
+                shape = RoundedCornerShape(Dimens.RadiusCard),
                 color = MaterialTheme.colorScheme.secondaryContainer,
                 modifier = Modifier.fillMaxWidth()
             ) {
-                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Column(Modifier.padding(Dimens.CardPadding), verticalArrangement = Arrangement.spacedBy(Dimens.FieldGap)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Rounded.CheckCircle, null, tint = MaterialTheme.colorScheme.secondary)
-                        Spacer(Modifier.width(10.dp))
-                        Column(Modifier.weight(1f)) {
-                            Text(r.outputFile.name, style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.onSecondaryContainer, maxLines = 1)
+                        Icon(Icons.Rounded.CheckCircle, null, Modifier.size(Dimens.IconBar), tint = MaterialTheme.colorScheme.secondary)
+                        Spacer(Modifier.width(Dimens.IconTextGap))
+                        Column(Modifier.weight(1f).padding(end = 8.dp)) {
+                            Text(r.outputFile.name, style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.onSecondaryContainer, maxLines = 1, overflow = TextOverflow.Ellipsis)
                             Text("${FileActions.humanSize(r.sizeBytes)} • ${"%.1f".format(r.durationMs / 1000.0)} s",
                                 style = WebifyTheme.mono.copy(fontSize = MaterialTheme.typography.labelSmall.fontSize), color = MaterialTheme.colorScheme.onSecondaryContainer)
                         }
                     }
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                         if (r.buildType != BuildType.AAB_PLAYSTORE) {
-                            Button(onClick = { FileActions.installApk(ctx, r.outputFile) }, modifier = Modifier.weight(1f)) {
-                                Icon(Icons.Rounded.InstallMobile, null, Modifier.size(20.dp)); Spacer(Modifier.width(6.dp)); Text("Install APK")
-                            }
+                            PrimaryButton("Install APK", onClick = { FileActions.installApk(ctx, r.outputFile) }, icon = Icons.Rounded.InstallMobile, modifier = Modifier.weight(1f))
                         }
-                        OutlinedButton(onClick = { FileActions.share(ctx, r.outputFile) }, modifier = Modifier.weight(1f)) {
-                            Icon(Icons.Rounded.Share, null, Modifier.size(20.dp)); Spacer(Modifier.width(6.dp))
-                            Text(if (r.buildType == BuildType.AAB_PLAYSTORE) "Share AAB" else "Share")
-                        }
-                        IconButton(onClick = { exporter.launch(r.outputFile.name) }) { Icon(Icons.Rounded.Download, "Ekspor") }
+                        SecondaryButton(
+                            if (r.buildType == BuildType.AAB_PLAYSTORE) "Share AAB" else "Share",
+                            onClick = { FileActions.share(ctx, r.outputFile) }, icon = Icons.Rounded.Share,
+                            modifier = Modifier.weight(1f).height(Dimens.PrimaryButtonHeight)
+                        )
                     }
+                    SecondaryButton("Export ke penyimpanan", onClick = { exporter.launch(r.outputFile.name) }, icon = Icons.Rounded.Download, modifier = Modifier.fillMaxWidth())
                 }
             }
         }
         is BuildResult.Failure -> {
-            Surface(shape = MaterialTheme.shapes.large, color = MaterialTheme.colorScheme.errorContainer, modifier = Modifier.fillMaxWidth()) {
-                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Surface(shape = RoundedCornerShape(Dimens.RadiusCard), color = MaterialTheme.colorScheme.errorContainer, modifier = Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(Dimens.CardPadding), verticalArrangement = Arrangement.spacedBy(Dimens.FieldGap)) {
                     Row(verticalAlignment = Alignment.Top) {
-                        Icon(if (r.summary == "Dibatalkan") Icons.Rounded.Cancel else Icons.Rounded.Error, null, tint = MaterialTheme.colorScheme.error)
-                        Spacer(Modifier.width(10.dp))
-                        Column {
+                        Icon(if (r.summary == "Dibatalkan") Icons.Rounded.Cancel else Icons.Rounded.Error, null, Modifier.size(Dimens.IconBar), tint = MaterialTheme.colorScheme.error)
+                        Spacer(Modifier.width(Dimens.IconTextGap))
+                        Column(Modifier.weight(1f)) {
                             Text("Gagal di tahap ${r.stage?.label ?: "-"}", style = MaterialTheme.typography.titleSmall)
-                            Text(r.summary.take(400), style = WebifyTheme.mono.copy(fontSize = MaterialTheme.typography.labelSmall.fontSize))
+                            Text(r.summary.take(400), style = WebifyTheme.mono.copy(fontSize = 11.sp, lineHeight = 16.sp), maxLines = 6, overflow = TextOverflow.Ellipsis)
                             r.compileErrors.filter { it.isError }.take(3).forEach {
                                 Text("• ${it.file}:${it.line} ${it.message}", style = MaterialTheme.typography.bodySmall)
                             }
                         }
                     }
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
                         if (r.summary != "Dibatalkan") {
-                            Button(
-                                onClick = onAnalyze,
-                                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.tertiary, contentColor = MaterialTheme.colorScheme.onTertiary),
-                                modifier = Modifier.weight(1f)
-                            ) {
-                                Icon(Icons.Rounded.AutoAwesome, null, Modifier.size(20.dp)); Spacer(Modifier.width(6.dp)); Text("Analisis Error dengan AI")
-                            }
+                            PrimaryButton(
+                                "Analisis dengan AI", onClick = onAnalyze, icon = Icons.Rounded.AutoAwesome, modifier = Modifier.weight(1f),
+                                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.tertiary, contentColor = MaterialTheme.colorScheme.onTertiary)
+                            )
                         }
-                        OutlinedButton(onClick = onRetry) { Text("Ulangi") }
+                        SecondaryButton("Ulangi", onClick = onRetry, modifier = Modifier.height(Dimens.PrimaryButtonHeight))
                     }
                 }
             }

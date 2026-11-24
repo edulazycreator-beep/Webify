@@ -70,3 +70,6 @@
 # ---- Webify ------------------------------------------------------------------
 -keep class com.webify.app.build.** { *; }
 -keep class com.webify.app.crypto.** { *; }
+
+# ---- Shim javax.lang.model.SourceVersion untuk ecj di ART ---------------------
+-keep class javax.lang.model.SourceVersion { *; }

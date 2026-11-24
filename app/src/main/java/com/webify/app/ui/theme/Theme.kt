@@ -56,13 +56,42 @@ private val DarkScheme = darkColorScheme(
     error = DarkError, errorContainer = DarkErrorContainer
 )
 
+/**
+ * Radius harmonis: 8dp badge/kode/terminal • 12dp button & text field • 16dp card & bottom sheet.
+ */
 val WebifyShapes = Shapes(
-    extraSmall = RoundedCornerShape(6.dp),
-    small = RoundedCornerShape(10.dp),
-    medium = RoundedCornerShape(14.dp),
-    large = RoundedCornerShape(20.dp),
-    extraLarge = RoundedCornerShape(28.dp)
+    extraSmall = RoundedCornerShape(8.dp),
+    small = RoundedCornerShape(8.dp),
+    medium = RoundedCornerShape(12.dp),
+    large = RoundedCornerShape(16.dp),
+    extraLarge = RoundedCornerShape(16.dp)
 )
+
+/** Token dimensi berbasis grid 8dp — dipakai seragam di semua layar. */
+object Dimens {
+    val ScreenPadding = 16.dp
+    val SectionGap = 12.dp
+    val CardPadding = 16.dp
+    val FieldGap = 12.dp
+    val IconTextGapSmall = 8.dp
+    val IconTextGap = 12.dp
+
+    val PrimaryButtonHeight = 52.dp
+    val SecondaryButtonHeight = 40.dp
+    val CardActionHeight = 38.dp
+    val SettingRowMinHeight = 52.dp
+
+    val IconChip = 16.dp
+    val IconInline = 20.dp
+    val IconBar = 24.dp
+    val ProjectIcon = 48.dp
+    val IconButtonSmall = 36.dp
+
+    val RadiusCard = 16.dp
+    val RadiusControl = 12.dp
+    val RadiusSecondary = 10.dp
+    val RadiusSmall = 8.dp
+}
 
 val LocalWebifyFonts = staticCompositionLocalOf<WebifyFonts> { error("WebifyFonts belum disediakan") }
 

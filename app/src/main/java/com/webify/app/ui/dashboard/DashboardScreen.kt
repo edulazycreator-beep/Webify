@@ -2,7 +2,6 @@ package com.webify.app.ui.dashboard
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -11,7 +10,9 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -74,6 +75,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import com.webify.app.ui.components.CardActionButton
+import com.webify.app.ui.theme.Dimens
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
 import com.webify.app.AppContainer
@@ -122,18 +126,18 @@ fun DashboardScreen(container: AppContainer, onOpenProject: (String) -> Unit, on
             columns = GridCells.Adaptive(minSize = 340.dp),
             modifier = Modifier.fillMaxSize(),
             contentPadding = PaddingValues(
-                start = 16.dp, end = 16.dp,
+                start = Dimens.ScreenPadding, end = Dimens.ScreenPadding,
                 top = pad.calculateTopPadding() + 8.dp,
                 bottom = pad.calculateBottomPadding() + 96.dp
             ),
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
+            horizontalArrangement = Arrangement.spacedBy(Dimens.SectionGap),
+            verticalArrangement = Arrangement.spacedBy(Dimens.SectionGap)
         ) {
             item(span = { GridItemSpan(maxLineSpan) }) {
                 Header(ui = ui, onUi = { container.securePrefs.saveUi(it) })
             }
             item(span = { GridItemSpan(maxLineSpan) }) {
-                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                Row(Modifier.fillMaxWidth().height(IntrinsicSize.Max), horizontalArrangement = Arrangement.spacedBy(Dimens.SectionGap)) {
                     StatTile("Proyek", state.totalProjects.toString(), Icons.Rounded.SpaceDashboard, MaterialTheme.colorScheme.primary, Modifier.weight(1f))
                     StatTile("Build sukses", state.successfulBuilds.toString(), Icons.Rounded.CheckCircle, MaterialTheme.colorScheme.secondary, Modifier.weight(1f))
                     StatTile("Keystore", state.keystoreCount.toString(), Icons.Rounded.VpnKey, MaterialTheme.colorScheme.tertiary, Modifier.weight(1f))
@@ -141,11 +145,11 @@ fun DashboardScreen(container: AppContainer, onOpenProject: (String) -> Unit, on
             }
             if (!toolchain.ready) {
                 item(span = { GridItemSpan(maxLineSpan) }) {
-                    Surface(color = MaterialTheme.colorScheme.errorContainer, shape = MaterialTheme.shapes.large) {
-                        Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.Rounded.Warning, null, tint = MaterialTheme.colorScheme.error)
-                            Spacer(Modifier.width(12.dp))
-                            Text(toolchain.message, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurface)
+                    Surface(color = MaterialTheme.colorScheme.errorContainer, shape = RoundedCornerShape(Dimens.RadiusCard)) {
+                        Row(Modifier.fillMaxWidth().padding(Dimens.CardPadding), verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Rounded.Warning, null, Modifier.size(Dimens.IconInline), tint = MaterialTheme.colorScheme.error)
+                            Spacer(Modifier.width(Dimens.IconTextGap))
+                            Text(toolchain.message, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurface, modifier = Modifier.weight(1f))
                         }
                     }
                 }
@@ -155,17 +159,18 @@ fun DashboardScreen(container: AppContainer, onOpenProject: (String) -> Unit, on
                     Surface(
                         onClick = onOpenConsole,
                         color = MaterialTheme.colorScheme.primaryContainer,
-                        shape = MaterialTheme.shapes.large
+                        shape = RoundedCornerShape(Dimens.RadiusCard)
                     ) {
-                        Column(Modifier.padding(14.dp)) {
+                        Column(Modifier.padding(Dimens.CardPadding)) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
-                                Icon(Icons.Rounded.Terminal, null, tint = MaterialTheme.colorScheme.onPrimaryContainer)
-                                Spacer(Modifier.width(10.dp))
+                                Icon(Icons.Rounded.Terminal, null, Modifier.size(Dimens.IconInline), tint = MaterialTheme.colorScheme.onPrimaryContainer)
+                                Spacer(Modifier.width(Dimens.IconTextGap))
                                 Text(
                                     if (s.running) "Membangun ${s.projectName} • ${s.activeStage?.label ?: "…"}" else "Build terakhir: ${s.projectName} — buka konsol",
                                     style = MaterialTheme.typography.titleSmall,
                                     color = MaterialTheme.colorScheme.onPrimaryContainer,
-                                    modifier = Modifier.weight(1f)
+                                    maxLines = 1, overflow = TextOverflow.Ellipsis,
+                                    modifier = Modifier.weight(1f).padding(end = 12.dp)
                                 )
                                 Text("${s.percent}%", style = WebifyTheme.mono, color = MaterialTheme.colorScheme.onPrimaryContainer)
                             }
@@ -182,10 +187,11 @@ fun DashboardScreen(container: AppContainer, onOpenProject: (String) -> Unit, on
                     value = state.query,
                     onValueChange = vm::setQuery,
                     placeholder = { Text("Cari proyek, package, atau URL") },
-                    leadingIcon = { Icon(Icons.Rounded.Search, null, Modifier.size(20.dp)) },
+                    leadingIcon = { Icon(Icons.Rounded.Search, null, Modifier.size(Dimens.IconInline)) },
                     singleLine = true,
-                    shape = RoundedCornerShape(50),
-                    modifier = Modifier.fillMaxWidth()
+                    textStyle = MaterialTheme.typography.bodyMedium,
+                    shape = RoundedCornerShape(Dimens.RadiusControl),
+                    modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp)
                 )
             }
             if (state.loaded && state.projects.isEmpty()) {
@@ -236,31 +242,37 @@ fun DashboardScreen(container: AppContainer, onOpenProject: (String) -> Unit, on
 @Composable
 private fun Header(ui: UiSettings, onUi: (UiSettings) -> Unit) {
     var menu by remember { mutableStateOf(false) }
-    Row(Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+    Row(
+        Modifier.fillMaxWidth().padding(top = 8.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
         Box(
-            Modifier.size(44.dp).clip(RoundedCornerShape(14.dp))
+            Modifier.size(40.dp).clip(RoundedCornerShape(Dimens.RadiusControl))
                 .background(Brush.linearGradient(listOf(Color(0xFF1E3A8A), Color(0xFF2563EB), Color(0xFF7C3AED)))),
             contentAlignment = Alignment.Center
-        ) { Icon(Icons.Rounded.Code, null, tint = Color.White) }
-        Spacer(Modifier.width(12.dp))
-        Column(Modifier.weight(1f)) {
-            Text("Webify", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.ExtraBold)
-            Text("Mobile IDE & Website-to-App Builder", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        ) { Icon(Icons.Rounded.Code, null, Modifier.size(Dimens.IconBar), tint = Color.White) }
+        Spacer(Modifier.width(Dimens.IconTextGap))
+        Column(Modifier.weight(1f).padding(end = 12.dp)) {
+            Text("Webify", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.ExtraBold, maxLines = 1)
+            Text(
+                "Mobile IDE & Website-to-App Builder", style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis
+            )
         }
         Box {
             IconButton(onClick = { menu = true }) {
                 Icon(
                     when (ui.darkMode) { true -> Icons.Rounded.DarkMode; false -> Icons.Rounded.LightMode; null -> Icons.Rounded.SettingsBrightness },
-                    "Tema"
+                    "Tema", Modifier.size(Dimens.IconBar)
                 )
             }
             DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
-                DropdownMenuItem(text = { Text("Ikuti sistem") }, leadingIcon = { Icon(Icons.Rounded.SettingsBrightness, null) }, onClick = { onUi(ui.copy(darkMode = null)); menu = false })
-                DropdownMenuItem(text = { Text("Terang") }, leadingIcon = { Icon(Icons.Rounded.LightMode, null) }, onClick = { onUi(ui.copy(darkMode = false)); menu = false })
-                DropdownMenuItem(text = { Text("Gelap (Obsidian)") }, leadingIcon = { Icon(Icons.Rounded.DarkMode, null) }, onClick = { onUi(ui.copy(darkMode = true)); menu = false })
+                DropdownMenuItem(text = { Text("Ikuti sistem") }, leadingIcon = { Icon(Icons.Rounded.SettingsBrightness, null, Modifier.size(Dimens.IconInline)) }, onClick = { onUi(ui.copy(darkMode = null)); menu = false })
+                DropdownMenuItem(text = { Text("Terang") }, leadingIcon = { Icon(Icons.Rounded.LightMode, null, Modifier.size(Dimens.IconInline)) }, onClick = { onUi(ui.copy(darkMode = false)); menu = false })
+                DropdownMenuItem(text = { Text("Gelap (Obsidian)") }, leadingIcon = { Icon(Icons.Rounded.DarkMode, null, Modifier.size(Dimens.IconInline)) }, onClick = { onUi(ui.copy(darkMode = true)); menu = false })
                 DropdownMenuItem(
                     text = { Text("Material You") },
-                    leadingIcon = { Icon(Icons.Rounded.Palette, null) },
+                    leadingIcon = { Icon(Icons.Rounded.Palette, null, Modifier.size(Dimens.IconInline)) },
                     trailingIcon = { Switch(checked = ui.dynamicColor, onCheckedChange = null) },
                     onClick = { onUi(ui.copy(dynamicColor = !ui.dynamicColor)) },
                     enabled = android.os.Build.VERSION.SDK_INT >= 31
@@ -279,47 +291,46 @@ private fun ProjectCard(
     onDelete: () -> Unit
 ) {
     Surface(
-        shape = MaterialTheme.shapes.large,
+        onClick = onEdit,
+        shape = RoundedCornerShape(Dimens.RadiusCard),
         color = MaterialTheme.colorScheme.surface,
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-        modifier = Modifier.fillMaxWidth().clickable(onClick = onEdit)
+        modifier = Modifier.fillMaxWidth()
     ) {
-        Column(Modifier.padding(16.dp)) {
+        Column(Modifier.padding(Dimens.CardPadding), verticalArrangement = Arrangement.spacedBy(Dimens.FieldGap)) {
+            // Baris atas: ikon 48dp • nama + package (weight) • badge versi di kanan atas
             Row(verticalAlignment = Alignment.CenterVertically) {
-                ProjectIcon(p, 52)
-                Spacer(Modifier.width(14.dp))
-                Column(Modifier.weight(1f)) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(p.appName, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, false))
-                        Spacer(Modifier.width(8.dp))
-                        Pill("v${p.versionName}", MaterialTheme.colorScheme.primaryContainer, MaterialTheme.colorScheme.onPrimaryContainer, mono = true)
-                    }
-                    Text(p.packageName, style = WebifyTheme.mono.copy(fontSize = MaterialTheme.typography.bodySmall.fontSize),
-                        color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                ProjectIcon(p, 48)
+                Spacer(Modifier.width(Dimens.IconTextGap))
+                Column(Modifier.weight(1f).padding(end = 12.dp)) {
+                    Text(p.appName, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text(
+                        p.packageName,
+                        style = WebifyTheme.mono.copy(fontSize = 12.sp, lineHeight = 16.sp),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis
+                    )
                 }
+                Pill("v${p.versionName}", MaterialTheme.colorScheme.primaryContainer, MaterialTheme.colorScheme.onPrimaryContainer, mono = true)
             }
-            Spacer(Modifier.height(10.dp))
+            // Sumber web
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(if (p.sourceType == SourceType.URL) Icons.Rounded.Language else Icons.Rounded.FolderZip, null,
-                    Modifier.size(16.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
-                Spacer(Modifier.width(6.dp))
+                Icon(
+                    if (p.sourceType == SourceType.URL) Icons.Rounded.Language else Icons.Rounded.FolderZip, null,
+                    Modifier.size(Dimens.IconChip), tint = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(Modifier.width(Dimens.IconTextGapSmall))
                 Text(
                     if (p.sourceType == SourceType.URL) p.targetUrl else "Proyek HTML lokal (ZIP)",
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1, overflow = TextOverflow.Ellipsis
+                    maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f)
                 )
             }
-            Spacer(Modifier.height(12.dp))
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                FilledTonalButton(onClick = onBuild, contentPadding = PaddingValues(horizontal = 14.dp)) {
-                    Icon(Icons.Rounded.Build, null, Modifier.size(20.dp))
-                    Spacer(Modifier.width(6.dp))
-                    Text("Build")
-                }
-                Spacer(Modifier.weight(1f))
-                IconButton(onClick = onEdit) { Icon(Icons.Rounded.Edit, "Edit", Modifier.size(20.dp)) }
-                IconButton(onClick = onClone) { Icon(Icons.Rounded.ContentCopy, "Clone", Modifier.size(20.dp)) }
-                IconButton(onClick = onDelete) { Icon(Icons.Rounded.Delete, "Hapus", Modifier.size(20.dp), tint = MaterialTheme.colorScheme.error) }
+            // Baris aksi: 4 tombol tinggi 38dp dengan jarak merata
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                CardActionButton("Build", Icons.Rounded.Build, onBuild, Modifier.weight(1f), emphasized = true)
+                CardActionButton("Edit", Icons.Rounded.Edit, onEdit, Modifier.weight(1f))
+                CardActionButton("Clone", Icons.Rounded.ContentCopy, onClone, Modifier.weight(1f))
+                CardActionButton("Hapus", Icons.Rounded.Delete, onDelete, Modifier.weight(1f), destructive = true)
             }
         }
     }
@@ -327,7 +338,7 @@ private fun ProjectCard(
 
 @Composable
 fun ProjectIcon(p: WebProjectEntity, sizeDp: Int) {
-    val shape = RoundedCornerShape((sizeDp * 0.28f).dp)
+    val shape = RoundedCornerShape(if (sizeDp >= 40) Dimens.RadiusControl else (sizeDp * 0.28f).dp)
     val path = p.iconUri
     if (path != null && File(path).exists()) {
         AsyncImage(
@@ -363,7 +374,7 @@ private fun CreateProjectDialog(onDismiss: () -> Unit, onCreate: (String, String
         icon = { Icon(Icons.Rounded.Add, null) },
         title = { Text("Proyek Baru") },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Column(verticalArrangement = Arrangement.spacedBy(Dimens.FieldGap)) {
                 LabeledField("Nama aplikasi", name, { name = it }, placeholder = "Toko Saya")
                 LabeledField("URL website", url, { url = it.trim() }, error = if (url.length > 8) urlError else null,
                     mono = true, keyboardType = KeyboardType.Uri)

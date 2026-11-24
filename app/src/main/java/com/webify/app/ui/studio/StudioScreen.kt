@@ -69,7 +69,7 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.ScrollableTabRow
+import androidx.compose.material3.PrimaryScrollableTabRow
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
@@ -95,6 +95,12 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.compose.ui.draw.clip
+import androidx.compose.foundation.layout.heightIn
+import com.webify.app.ui.components.PrimaryButton
+import com.webify.app.ui.components.SecondaryButton
+import com.webify.app.ui.theme.Dimens
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -165,9 +171,9 @@ fun StudioScreen(
                 navigationIcon = { IconButton(onClick = { scope.launch { vm.flush(); onBack() } }) { Icon(Icons.AutoMirrored.Rounded.ArrowBack, "Kembali") } },
                 title = {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        if (p != null) { ProjectIcon(p, 32); Spacer(Modifier.width(10.dp)) }
+                        if (p != null) { ProjectIcon(p, 32); Spacer(Modifier.width(Dimens.IconTextGap)) }
                         Column {
-                            Text(p?.appName ?: "Builder Studio", style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            Text(p?.appName ?: "Builder Studio", style = MaterialTheme.typography.titleLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
                             Text(
                                 if (saving) "Menyimpan…" else "Tersimpan otomatis",
                                 style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -193,20 +199,22 @@ fun StudioScreen(
             return@Scaffold
         }
         Column(Modifier.padding(pad).fillMaxSize()) {
-            ScrollableTabRow(
+            PrimaryScrollableTabRow(
                 selectedTabIndex = tab,
-                edgePadding = 12.dp,
-                containerColor = MaterialTheme.colorScheme.background,
-                divider = {}
+                edgePadding = Dimens.ScreenPadding,
+                containerColor = MaterialTheme.colorScheme.background
             ) {
                 TABS.forEachIndexed { i, t ->
-                    Tab(selected = tab == i, onClick = { tab = i }, text = { Text(t, style = MaterialTheme.typography.labelLarge) })
+                    Tab(
+                        selected = tab == i, onClick = { tab = i },
+                        text = { Text(t, style = MaterialTheme.typography.labelLarge, maxLines = 1, overflow = TextOverflow.Ellipsis) }
+                    )
                 }
             }
             Column(
                 Modifier.fillMaxSize().verticalScroll(rememberScrollState()).imePadding()
-                    .padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(14.dp)
+                    .padding(Dimens.ScreenPadding),
+                verticalArrangement = Arrangement.spacedBy(Dimens.SectionGap)
             ) {
                 val update: ((WebProjectEntity) -> WebProjectEntity) -> Unit = vm::update
                 when (tab) {
@@ -237,18 +245,24 @@ private fun GeneralTab(p: WebProjectEntity, e: StudioErrors, update: ((WebProjec
     SectionCard("Sumber Website", Icons.Rounded.Language) {
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             FilterChip(selected = p.sourceType == SourceType.URL, onClick = { update { it.copy(sourceType = SourceType.URL) } },
-                label = { Text("URL Website") }, leadingIcon = { Icon(Icons.Rounded.Link, null, Modifier.size(20.dp)) })
+                label = { Text("URL Website") }, leadingIcon = { Icon(Icons.Rounded.Link, null, Modifier.size(18.dp)) })
             FilterChip(selected = p.sourceType == SourceType.LOCAL_HTML_ZIP, onClick = { update { it.copy(sourceType = SourceType.LOCAL_HTML_ZIP) } },
-                label = { Text("HTML Lokal (ZIP)") }, leadingIcon = { Icon(Icons.Rounded.FolderZip, null, Modifier.size(20.dp)) })
+                label = { Text("HTML Lokal (ZIP)") }, leadingIcon = { Icon(Icons.Rounded.FolderZip, null, Modifier.size(18.dp)) })
         }
         if (p.sourceType == SourceType.URL) {
             LabeledField("URL target", p.targetUrl, { v -> update { it.copy(targetUrl = v.trim()) } }, error = e.url, mono = true, keyboardType = KeyboardType.Uri)
         } else {
-            OutlinedButton(onClick = { zipPicker.launch(arrayOf("application/zip", "application/x-zip-compressed", "application/octet-stream")) }) {
-                Icon(Icons.Rounded.FolderZip, null, Modifier.size(20.dp)); Spacer(Modifier.width(8.dp))
-                Text(if (p.localZipPath == null) "Pilih ZIP (berisi index.html)" else "Ganti ZIP proyek web")
+            SecondaryButton(
+                if (p.localZipPath == null) "Pilih ZIP (berisi index.html)" else "Ganti ZIP proyek web",
+                onClick = { zipPicker.launch(arrayOf("application/zip", "application/x-zip-compressed", "application/octet-stream")) },
+                icon = Icons.Rounded.FolderZip
+            )
+            p.localZipPath?.let {
+                Text(
+                    "✓ ${File(it).name} (${FileActions.humanSize(File(it).length())})",
+                    style = WebifyTheme.mono.copy(fontSize = 12.sp, lineHeight = 16.sp), maxLines = 1, overflow = TextOverflow.Ellipsis
+                )
             }
-            p.localZipPath?.let { Text("✓ ${File(it).name} (${FileActions.humanSize(File(it).length())})", style = MaterialTheme.typography.bodySmall) }
             e.url?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
         }
         LabeledField("Domain internal tambahan", p.allowedDomains, { v -> update { it.copy(allowedDomains = v) } }, mono = true,
@@ -260,14 +274,14 @@ private fun GeneralTab(p: WebProjectEntity, e: StudioErrors, update: ((WebProjec
         LabeledField("Nama aplikasi", p.appName, { v -> update { it.copy(appName = v) } })
         LabeledField("Package name", p.packageName, { v -> update { it.copy(packageName = v.trim().lowercase()) } }, error = e.packageName, mono = true,
             supporting = "Contoh: com.namatoko.app")
-        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        Row(horizontalArrangement = Arrangement.spacedBy(Dimens.FieldGap)) {
             LabeledField("Version code", p.versionCode.toString(),
                 { v -> v.filter(Char::isDigit).take(9).toIntOrNull()?.let { n -> update { it.copy(versionCode = maxOf(1, n)) } } },
                 modifier = Modifier.weight(1f), keyboardType = KeyboardType.Number, mono = true)
             LabeledField("Version name", p.versionName, { v -> update { it.copy(versionName = v.trim()) } },
                 modifier = Modifier.weight(1f), error = e.versionName, mono = true)
         }
-        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        Row(horizontalArrangement = Arrangement.spacedBy(Dimens.FieldGap)) {
             SelectField("minSdk", (21..30).toList(), p.minSdk, { "API $it" }, { v -> update { it.copy(minSdk = v) } }, Modifier.weight(1f))
             SelectField("targetSdk", listOf(33, 34, 35), p.targetSdk, { "API $it" }, { v -> update { it.copy(targetSdk = v) } }, Modifier.weight(1f))
         }
@@ -275,12 +289,10 @@ private fun GeneralTab(p: WebProjectEntity, e: StudioErrors, update: ((WebProjec
 
     SectionCard("Ikon & Warna", Icons.Rounded.Brush) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            ProjectIcon(p, 72)
-            Spacer(Modifier.width(16.dp))
-            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                OutlinedButton(onClick = { iconPicker.launch("image/*") }) {
-                    Icon(Icons.Rounded.Image, null, Modifier.size(20.dp)); Spacer(Modifier.width(8.dp)); Text("Pilih ikon")
-                }
+            ProjectIcon(p, 64)
+            Spacer(Modifier.width(Dimens.IconTextGap))
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                SecondaryButton("Pilih ikon", onClick = { iconPicker.launch("image/*") }, icon = Icons.Rounded.Image)
                 Text("PNG/JPG persegi ≥ 512 px. Otomatis di-resize 48–192 px + adaptive 108dp.",
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
@@ -349,11 +361,14 @@ private fun SplashOfflineTab(p: WebProjectEntity, e: StudioErrors, update: ((Web
     SectionCard("Mode Offline", Icons.Rounded.CloudOff) {
         OfflineModeType.entries.forEach { m ->
             Row(
-                Modifier.fillMaxWidth().clickable { update { it.copy(offlineModeType = m) } }.padding(vertical = 4.dp),
+                Modifier.fillMaxWidth().heightIn(min = Dimens.SettingRowMinHeight)
+                    .clip(RoundedCornerShape(Dimens.RadiusSmall))
+                    .clickable { update { it.copy(offlineModeType = m) } }.padding(vertical = 4.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 RadioButton(selected = p.offlineModeType == m, onClick = { update { it.copy(offlineModeType = m) } })
-                Column {
+                Spacer(Modifier.width(4.dp))
+                Column(Modifier.weight(1f)) {
                     Text(
                         when (m) { OfflineModeType.DEFAULT_MODERN -> "Halaman offline modern"; OfflineModeType.CUSTOM_HTML -> "HTML offline kustom"; OfflineModeType.CACHE_FIRST -> "Cache-first" },
                         style = MaterialTheme.typography.bodyLarge
@@ -390,26 +405,26 @@ private fun PermissionsCodeTab(p: WebProjectEntity, update: ((WebProjectEntity) 
         SwitchRow("Penyimpanan unduhan", p.permStorageDownloads, { v -> update { it.copy(permStorageDownloads = v) } }, "WRITE_EXTERNAL_STORAGE (≤ Android 9)", Icons.Rounded.Download)
     }
     SectionCard("Code Injection", Icons.Rounded.Code, "Diinjeksi ke setiap halaman internal") {
-        Surface(color = MaterialTheme.colorScheme.tertiaryContainer, shape = MaterialTheme.shapes.medium) {
-            Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Surface(color = MaterialTheme.colorScheme.tertiaryContainer, shape = RoundedCornerShape(Dimens.RadiusControl)) {
+            Column(Modifier.fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(Dimens.FieldGap)) {
                 Text("✨ Smart Injector — jelaskan perubahan yang diinginkan", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onTertiaryContainer)
                 OutlinedTextField(
                     value = aiInstruction, onValueChange = { aiInstruction = it },
                     placeholder = { Text("Sembunyikan banner iklan bawah & perbesar font") },
-                    modifier = Modifier.fillMaxWidth(), shape = MaterialTheme.shapes.medium
+                    textStyle = MaterialTheme.typography.bodyMedium,
+                    modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp), shape = RoundedCornerShape(Dimens.RadiusControl)
                 )
-                Button(
-                    onClick = { onAskAi(aiInstruction) }, enabled = aiInstruction.isNotBlank(),
+                PrimaryButton(
+                    "Buat dengan AI", onClick = { onAskAi(aiInstruction) }, enabled = aiInstruction.isNotBlank(),
+                    icon = Icons.Rounded.AutoAwesome, modifier = Modifier.fillMaxWidth(),
                     colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.tertiary, contentColor = MaterialTheme.colorScheme.onTertiary)
-                ) {
-                    Icon(Icons.Rounded.AutoAwesome, null, Modifier.size(20.dp)); Spacer(Modifier.width(8.dp)); Text("Buat dengan AI")
-                }
+                )
             }
         }
         CodeEditor("Custom CSS", p.customCssCode, { v -> update { it.copy(customCssCode = v) } },
             placeholder = ".ads-banner { display: none !important; }", language = "css")
         CodeEditor("JavaScript • onPageStarted", p.customJsOnPageStart, { v -> update { it.copy(customJsOnPageStart = v) } },
-            placeholder = "// dijalankan saat halaman mulai dimuat", minHeight = 120, language = "js")
+            placeholder = "// dijalankan saat halaman mulai dimuat", minHeight = 160, language = "js")
         CodeEditor("JavaScript • onPageFinished", p.customJsOnPageFinished, { v -> update { it.copy(customJsOnPageFinished = v) } },
             placeholder = "document.querySelector('header')?.remove();", language = "js")
     }
@@ -455,13 +470,13 @@ private fun BuildTab(
                 )
             } else {
                 Text("SHA-256", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Text(selectedKs.sha256Fingerprint, style = WebifyTheme.mono.copy(fontSize = MaterialTheme.typography.labelSmall.fontSize))
+                Text(selectedKs.sha256Fingerprint, style = WebifyTheme.mono.copy(fontSize = 11.sp, lineHeight = 16.sp))
             }
         }
     }
 
     if (errors.hasErrors) {
-        Surface(color = MaterialTheme.colorScheme.errorContainer, shape = MaterialTheme.shapes.medium) {
+        Surface(color = MaterialTheme.colorScheme.errorContainer, shape = RoundedCornerShape(Dimens.RadiusControl), modifier = Modifier.fillMaxWidth()) {
             Text(
                 listOfNotNull(errors.packageName?.let { "Package: $it" }, errors.url?.let { "Sumber: $it" }, errors.versionName?.let { "Versi: $it" },
                     errors.colors.keys.takeIf { it.isNotEmpty() }?.let { "Warna tidak valid: ${it.joinToString()}" }).joinToString("\n"),
@@ -470,23 +485,14 @@ private fun BuildTab(
         }
     }
 
-    Button(
-        onClick = { onBuild(target) },
-        modifier = Modifier.fillMaxWidth().height(60.dp),
-        shape = MaterialTheme.shapes.large,
-        enabled = !errors.hasErrors
-    ) {
-        Icon(Icons.Rounded.PlayArrow, null)
-        Spacer(Modifier.width(10.dp))
-        Text("Start Local Build", style = MaterialTheme.typography.titleMedium)
-    }
-    OutlinedButton(
-        onClick = { onBuild(BuildType.APK_DEBUG) },
-        modifier = Modifier.fillMaxWidth(),
-        enabled = !errors.hasErrors
-    ) {
-        Icon(Icons.Rounded.Bolt, null, Modifier.size(20.dp)); Spacer(Modifier.width(8.dp)); Text("Quick Build & Test (Debug Key)")
-    }
+    PrimaryButton(
+        "Start Local Build", onClick = { onBuild(target) }, icon = Icons.Rounded.PlayArrow,
+        modifier = Modifier.fillMaxWidth(), enabled = !errors.hasErrors
+    )
+    SecondaryButton(
+        "Quick Build & Test (Debug Key)", onClick = { onBuild(BuildType.APK_DEBUG) }, icon = Icons.Rounded.Bolt,
+        modifier = Modifier.fillMaxWidth(), enabled = !errors.hasErrors
+    )
 
     SectionCard("Riwayat Build", Icons.Rounded.Refresh) {
         if (builds.isEmpty()) {
@@ -507,16 +513,16 @@ private fun BuildTargetOption(type: BuildType, selected: BuildType, icon: ImageV
     val isSel = type == selected
     Surface(
         onClick = { onSelect(type) },
-        shape = MaterialTheme.shapes.medium,
+        shape = RoundedCornerShape(Dimens.RadiusControl),
         color = if (isSel) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainer,
-        border = if (isSel) BorderStroke(1.5.dp, MaterialTheme.colorScheme.primary) else null
+        border = BorderStroke(1.dp, if (isSel) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant)
     ) {
-        Row(Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
-            Icon(icon, null, tint = if (isSel) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
-            Spacer(Modifier.width(12.dp))
-            Column(Modifier.weight(1f)) {
-                Text(title, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
-                Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Row(Modifier.fillMaxWidth().heightIn(min = 64.dp).padding(horizontal = 12.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+            Icon(icon, null, Modifier.size(Dimens.IconInline), tint = if (isSel) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
+            Spacer(Modifier.width(Dimens.IconTextGap))
+            Column(Modifier.weight(1f).padding(end = 12.dp)) {
+                Text(title, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2, overflow = TextOverflow.Ellipsis)
             }
             RadioButton(selected = isSel, onClick = { onSelect(type) })
         }
@@ -527,14 +533,14 @@ private fun BuildTargetOption(type: BuildType, selected: BuildType, icon: ImageV
 private fun BuildRecordRow(b: BuildRecordEntity, onInstall: () -> Unit, onShare: () -> Unit, onExport: () -> Unit) {
     val ok = b.status == BuildStatus.SUCCESS
     val exists = b.outputFilePath != null && File(b.outputFilePath).exists()
-    Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+    Row(Modifier.fillMaxWidth().heightIn(min = Dimens.SettingRowMinHeight), verticalAlignment = Alignment.CenterVertically) {
         Icon(if (ok) Icons.Rounded.CheckCircle else Icons.Rounded.Error, null,
-            tint = if (ok) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.error, modifier = Modifier.size(20.dp))
-        Spacer(Modifier.width(10.dp))
-        Column(Modifier.weight(1f)) {
+            tint = if (ok) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.error, modifier = Modifier.size(Dimens.IconInline))
+        Spacer(Modifier.width(Dimens.IconTextGap))
+        Column(Modifier.weight(1f).padding(end = 8.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(b.buildType.label, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
-                Spacer(Modifier.width(6.dp))
+                Text(b.buildType.label, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium, maxLines = 1)
+                Spacer(Modifier.width(Dimens.IconTextGapSmall))
                 if (ok) Pill(FileActions.humanSize(b.fileSizeBytes), MaterialTheme.colorScheme.surfaceContainer, MaterialTheme.colorScheme.onSurfaceVariant, mono = true)
             }
             Text(
@@ -544,9 +550,11 @@ private fun BuildRecordRow(b: BuildRecordEntity, onInstall: () -> Unit, onShare:
             )
         }
         if (ok && exists) {
-            if (b.buildType != BuildType.AAB_PLAYSTORE) IconButton(onClick = onInstall) { Icon(Icons.Rounded.InstallMobile, "Install", Modifier.size(20.dp)) }
-            IconButton(onClick = onShare) { Icon(Icons.Rounded.Share, "Bagikan", Modifier.size(20.dp)) }
-            IconButton(onClick = onExport) { Icon(Icons.Rounded.Download, "Ekspor", Modifier.size(20.dp)) }
+            if (b.buildType != BuildType.AAB_PLAYSTORE) {
+                IconButton(onClick = onInstall, modifier = Modifier.size(Dimens.IconButtonSmall)) { Icon(Icons.Rounded.InstallMobile, "Install", Modifier.size(Dimens.IconInline)) }
+            }
+            IconButton(onClick = onShare, modifier = Modifier.size(Dimens.IconButtonSmall)) { Icon(Icons.Rounded.Share, "Bagikan", Modifier.size(Dimens.IconInline)) }
+            IconButton(onClick = onExport, modifier = Modifier.size(Dimens.IconButtonSmall)) { Icon(Icons.Rounded.Download, "Ekspor", Modifier.size(Dimens.IconInline)) }
         }
     }
 }
@@ -564,29 +572,29 @@ fun StudioPickerScreen(container: AppContainer, onOpenProject: (String) -> Unit)
             }
             else -> LazyColumn(
                 Modifier.fillMaxSize().padding(pad),
-                contentPadding = PaddingValues(16.dp),
-                verticalArrangement = Arrangement.spacedBy(10.dp)
+                contentPadding = PaddingValues(Dimens.ScreenPadding),
+                verticalArrangement = Arrangement.spacedBy(Dimens.SectionGap)
             ) {
                 item {
-                    Text("Builder Studio", style = MaterialTheme.typography.headlineMedium)
+                    Text("Builder Studio", style = MaterialTheme.typography.titleLarge)
                     Text("Pilih proyek untuk dibuka", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     Spacer(Modifier.height(8.dp))
                 }
                 items(list, key = { it.id }) { p ->
                     Surface(
                         onClick = { onOpenProject(p.id) },
-                        shape = MaterialTheme.shapes.large,
+                        shape = RoundedCornerShape(Dimens.RadiusCard),
                         color = MaterialTheme.colorScheme.surface,
                         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
                         modifier = Modifier.fillMaxWidth().widthIn(max = 720.dp)
                     ) {
-                        Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
-                            ProjectIcon(p, 40)
-                            Spacer(Modifier.width(12.dp))
-                            Column(Modifier.weight(1f)) {
-                                Text(p.appName, style = MaterialTheme.typography.titleSmall)
-                                Text(p.packageName, style = WebifyTheme.mono.copy(fontSize = MaterialTheme.typography.bodySmall.fontSize),
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Row(Modifier.padding(Dimens.CardPadding), verticalAlignment = Alignment.CenterVertically) {
+                            ProjectIcon(p, 44)
+                            Spacer(Modifier.width(Dimens.IconTextGap))
+                            Column(Modifier.weight(1f).padding(end = 12.dp)) {
+                                Text(p.appName, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                Text(p.packageName, style = WebifyTheme.mono.copy(fontSize = 12.sp, lineHeight = 16.sp),
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
                             }
                             Pill("v${p.versionName}", MaterialTheme.colorScheme.primaryContainer, MaterialTheme.colorScheme.onPrimaryContainer, mono = true)
                         }
