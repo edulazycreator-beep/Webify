@@ -11,7 +11,7 @@ import java.io.Writer
  */
 class EcjCompilerWrapper(private val androidJar: File) {
 
-    fun compile(ws: Workspace, log: BuildLogger): Int {
+    fun compile(ws: Workspace, log: BuildLogger, libraryJars: List<File> = emptyList()): Int {
         val sources = ws.src.walkTopDown().filter { it.isFile && it.extension == "java" }.map { it.absolutePath }.toList()
         if (sources.isEmpty()) throw BuildStageException(BuildStage.ECJ, "Tidak ada file .java untuk dikompilasi")
         ws.classes.deleteRecursively(); ws.classes.mkdirs()
@@ -24,11 +24,11 @@ class EcjCompilerWrapper(private val androidJar: File) {
             "-g:source,lines",
             "-d", ws.classes.absolutePath,
             "-bootclasspath", androidJar.absolutePath,
-            "-classpath", androidJar.absolutePath,
+            "-classpath", (listOf(androidJar) + libraryJars).joinToString(File.pathSeparator) { it.absolutePath },
             "-sourcepath", ws.src.absolutePath
         )
         args += sources
-        log.info("ecj: mengompilasi ${sources.size} file Java (target 1.8)")
+        log.info("ecj: mengompilasi ${sources.size} file Java (target 1.8)" + if (libraryJars.isNotEmpty()) " • classpath +${libraryJars.size} JAR" else "")
 
         val outBuffer = StringWriter()
         val errBuffer = StringWriter()

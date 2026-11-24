@@ -47,6 +47,12 @@ object AabPackager {
         if (ws.assets.exists() && (ws.assets.list()?.isNotEmpty() == true)) {
             ws.assets.copyRecursively(File(base, "assets"), overwrite = true)
         }
+        if (ws.nativeLibs.exists() && (ws.nativeLibs.list()?.isNotEmpty() == true)) {
+            ws.nativeLibs.copyRecursively(File(base, "lib"), overwrite = true)
+        }
+        if (ws.javaResources.exists() && (ws.javaResources.list()?.isNotEmpty() == true)) {
+            ws.javaResources.copyRecursively(File(base, "root"), overwrite = false) { _, _ -> OnErrorAction.SKIP }
+        }
 
         // 3. base.zip — hanya entri file (tanpa entri direktori) agar lolos validasi bundletool
         val baseZip = File(ws.bundleStaging, "base.zip")

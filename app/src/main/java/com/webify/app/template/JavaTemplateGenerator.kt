@@ -7,6 +7,9 @@ import com.webify.app.build.BuildStage
 import com.webify.app.build.BuildStageException
 import com.webify.app.build.Workspace
 import com.webify.app.data.db.WebProjectEntity
+import com.webify.app.domain.NativeConfigCodec
+import com.webify.app.domain.NavIcon
+import com.webify.app.domain.NavStyle
 import com.webify.app.domain.OfflineModeType
 import com.webify.app.domain.SourceType
 import com.webify.app.domain.StatusBarStyle
@@ -28,7 +31,15 @@ class JavaTemplateGenerator(private val context: Context) {
         bc.writeText(buildConfig(project))
         log.info("BuildConfig.java dibuat (${bc.length()} byte)")
 
-        for (name in TEMPLATES) {
+        val pluginWrites = File(pkgDir, "WebifyPlugins.java")
+        pluginWrites.writeText(pluginsClass(project))
+        val templates = TEMPLATES + buildList {
+            if (project.fcmEnabled) { add("WebifyFirebaseMessagingService.java"); add("WebifyFcm.java") }
+            if (project.admobEnabled) add("WebifyAdManager.java")
+            if (project.qrScannerEnabled) add("WebifyQrScannerActivity.java")
+        }
+        if (templates.size > TEMPLATES.size) log.info("Plugin SDK: ${templates.drop(TEMPLATES.size).joinToString()}")
+        for (name in templates) {
             val source = try {
                 context.assets.open("$TEMPLATE_DIR/$name").use { it.readBytes().toString(Charsets.UTF_8) }
             } catch (e: Exception) {
@@ -39,7 +50,7 @@ class JavaTemplateGenerator(private val context: Context) {
         }
         val rJava = File(pkgDir, "R.java")
         if (!rJava.exists()) throw BuildStageException(BuildStage.JAVA_GEN, "R.java tidak ditemukan — aapt2 link --java gagal menulis ke ${pkgDir.path}")
-        log.info("${TEMPLATES.size + 1} kelas Java + R.java siap di ${pkgDir.relativeTo(ws.root).path}")
+        log.info("${templates.size + 2} kelas Java + R.java siap di ${pkgDir.relativeTo(ws.root).path}")
     }
 
     private fun buildConfig(p: WebProjectEntity): String {
@@ -142,6 +153,24 @@ class JavaTemplateGenerator(private val context: Context) {
             appendLine("    public static final boolean ENABLE_DOWNLOAD_MANAGER = ${p.enableDownloadManager};")
             appendLine("    public static final boolean ENABLE_EXTERNAL_INTENTS = ${p.enableExternalIntentRouting};")
             appendLine()
+            appendLine("    // Navigasi native, keamanan & tentang")
+            val navItems = if (p.navStyle == NavStyle.NONE) emptyList()
+                else NativeConfigCodec.navItems(p.navItemsJson).filter { it.label.isNotBlank() && it.targetUrl.isNotBlank() }.take(5)
+            appendLine("    public static final int NAV_STYLE = ${if (navItems.isEmpty()) 0 else p.navStyle.ordinal};")
+            appendLine("    public static final String[] NAV_LABELS = new String[]{${navItems.joinToString(", ") { lit(it.label) }}};")
+            appendLine("    public static final String[] NAV_URLS = new String[]{${navItems.joinToString(", ") { lit(NativeConfigCodec.resolve(target, it.targetUrl)) }}};")
+            appendLine("    public static final int[] NAV_ICONS = new int[]{${navItems.joinToString(", ") { "R.drawable.wf_ic_" + NavIcon.of(it.icon).key }}};")
+            appendLine("    public static final boolean BIOMETRIC_LOCK = ${p.enableBiometricLock};")
+            appendLine("    public static final boolean ABOUT_ENABLED = ${p.enableAboutDialog};")
+            appendLine("    public static final String PRIVACY_URL = ${lit(p.privacyPolicyUrl.trim())};")
+            appendLine()
+            appendLine("    // Plugin SDK")
+            appendLine("    public static final boolean FCM_ENABLED = ${p.fcmEnabled};")
+            appendLine("    public static final boolean ADMOB_ENABLED = ${p.admobEnabled};")
+            appendLine("    public static final String ADMOB_BANNER_ID = ${lit(p.admobBannerId.trim())};")
+            appendLine("    public static final String ADMOB_INTERSTITIAL_ID = ${lit(p.admobInterstitialId.trim())};")
+            appendLine("    public static final boolean QR_ENABLED = ${p.qrScannerEnabled};")
+            appendLine()
             appendLine("    // Code injection")
             appendLine("    public static final String CUSTOM_CSS = ${bigLit(p.customCssCode)};")
             appendLine("    public static final String CUSTOM_JS_ON_PAGE_START = ${bigLit(p.customJsOnPageStart)};")
@@ -152,6 +181,55 @@ class JavaTemplateGenerator(private val context: Context) {
             appendLine("    public static final boolean ENABLE_JS = ENABLE_JAVASCRIPT;")
             appendLine("}")
         }
+    }
+
+    /**
+     * Titik integrasi plugin: satu-satunya kelas yang memanggil kelas SDK (Firebase/AdMob/ZXing).
+     * Jika plugin nonaktif, metode berisi no-op sehingga proyek tetap terkompilasi tanpa library eksternal.
+     */
+    private fun pluginsClass(p: WebProjectEntity): String = buildString {
+        appendLine("package ${p.packageName};")
+        appendLine()
+        appendLine("/** Dihasilkan otomatis oleh Webify — jembatan ke plugin SDK yang aktif. */")
+        appendLine("final class WebifyPlugins {")
+        appendLine("    private WebifyPlugins() {}")
+        appendLine()
+        appendLine("    static void onCreate(MainActivity a) {")
+        if (p.fcmEnabled) appendLine("        WebifyFcm.init(a);")
+        if (p.admobEnabled) appendLine("        WebifyAdManager.init(a);")
+        appendLine("    }")
+        appendLine()
+        appendLine("    static void onPageFinished(MainActivity a, android.webkit.WebView view) {")
+        if (p.fcmEnabled) appendLine("        WebifyFcm.deliverToken(a, view);")
+        appendLine("    }")
+        appendLine()
+        appendLine("    /** Banner iklan native di bawah WebView, atau null. */")
+        appendLine("    static android.view.View createBanner(MainActivity a) {")
+        appendLine(if (p.admobEnabled) "        return WebifyAdManager.createBanner(a);" else "        return null;")
+        appendLine("    }")
+        appendLine()
+        appendLine("    static boolean showInterstitial(MainActivity a) {")
+        appendLine(if (p.admobEnabled) "        return WebifyAdManager.showInterstitial(a);" else "        return false;")
+        appendLine("    }")
+        appendLine()
+        appendLine("    static boolean scanQr(MainActivity a, String callback) {")
+        if (p.qrScannerEnabled) {
+            appendLine("        android.content.Intent i = new android.content.Intent(a, WebifyQrScannerActivity.class);")
+            appendLine("        i.putExtra(\"callback\", callback);")
+            appendLine("        a.startActivityForResult(i, MainActivity.REQ_QR_SCAN);")
+            appendLine("        return true;")
+        } else appendLine("        return false;")
+        appendLine("    }")
+        appendLine()
+        appendLine("    static void requestFcmToken(MainActivity a, String callback) {")
+        if (p.fcmEnabled) appendLine("        WebifyFcm.requestToken(a, callback);")
+        else appendLine("        a.deliverJs(callback, \"null\");")
+        appendLine("    }")
+        appendLine()
+        appendLine("    static void onDestroy(MainActivity a) {")
+        if (p.admobEnabled) appendLine("        WebifyAdManager.destroy();")
+        appendLine("    }")
+        appendLine("}")
     }
 
     private fun defaultOfflineHtml(p: WebProjectEntity): String {
@@ -212,7 +290,11 @@ small{display:block;margin-top:16px;font-size:12px;opacity:.6}
             "WebifyJsBridge.java",
             "WebifyFileProvider.java",
             "WebifyRefreshLayout.java",
-            "WebifySplashView.java"
+            "WebifySplashView.java",
+            "WebifyNativeNav.java",
+            "BiometricLockHelper.java",
+            "WebifyAboutDialog.java",
+            "WebifyNotificationReceiver.java"
         )
         private const val CHUNK = 8000
 

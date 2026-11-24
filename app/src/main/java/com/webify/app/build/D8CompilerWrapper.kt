@@ -15,7 +15,7 @@ import java.nio.file.Path
  */
 class D8CompilerWrapper(private val androidJar: File) {
 
-    fun dex(ws: Workspace, minSdk: Int, release: Boolean, log: BuildLogger): List<File> {
+    fun dex(ws: Workspace, minSdk: Int, release: Boolean, log: BuildLogger, libraryJars: List<File> = emptyList()): List<File> {
         val classFiles: List<Path> = ws.classes.walkTopDown()
             .filter { it.isFile && it.extension == "class" }
             .map { it.toPath() }
@@ -35,10 +35,12 @@ class D8CompilerWrapper(private val androidJar: File) {
         }
 
         val mode = if (release) CompilationMode.RELEASE else CompilationMode.DEBUG
-        log.info("d8: ${classFiles.size} class → DEX (mode=$mode, minApi=$minSdk)")
+        log.info("d8: ${classFiles.size} class" + (if (libraryJars.isNotEmpty()) " + ${libraryJars.size} JAR library" else "") +
+            " → DEX (mode=$mode, minApi=$minSdk, multi-dex otomatis)")
         try {
             val command = D8Command.builder(handler)
                 .addProgramFiles(classFiles)
+                .addProgramFiles(libraryJars.map { it.toPath() })
                 .addLibraryFiles(androidJar.toPath())
                 .setMinApiLevel(minSdk)
                 .setMode(mode)

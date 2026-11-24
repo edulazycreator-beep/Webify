@@ -81,6 +81,24 @@ class ProjectRepository(
         f.absolutePath
     }
 
+    /** Menyalin file sembarang (google-services.json, .aar, .jar) ke project_assets/<id>/<fileName>. */
+    suspend fun importAsset(projectId: String, uri: Uri, fileName: String): File = withContext(Dispatchers.IO) {
+        val dir = File(context.filesDir, "project_assets/$projectId").apply { mkdirs() }
+        val safe = fileName.replace(Regex("[^A-Za-z0-9._-]"), "_")
+        val f = File(dir, safe)
+        context.contentResolver.openInputStream(uri)?.use { ins -> f.outputStream().use { ins.copyTo(it) } }
+            ?: throw IllegalStateException("Tidak bisa membaca file")
+        f
+    }
+
+    fun displayName(uri: Uri): String? = try {
+        context.contentResolver.query(uri, arrayOf(android.provider.OpenableColumns.DISPLAY_NAME), null, null, null)?.use { c ->
+            if (c.moveToFirst()) c.getString(0) else null
+        }
+    } catch (_: Exception) { null }
+
+    fun projectAssetFile(projectId: String, name: String) = File(context.filesDir, "project_assets/$projectId/$name")
+
     /** Menyalin ZIP proyek web lokal (HTML/CSS/JS) ke penyimpanan privat. */
     suspend fun importSiteZip(projectId: String, uri: Uri): String = withContext(Dispatchers.IO) {
         val dir = File(context.filesDir, "project_assets/$projectId").apply { mkdirs() }

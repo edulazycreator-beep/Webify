@@ -8,6 +8,9 @@ import com.webify.app.domain.BuildStatus
 import com.webify.app.domain.BuildType
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.ProcessLifecycleOwner
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -42,6 +45,7 @@ class BuildManager(
     toolchain: Toolchain
 ) {
     private val pipeline = WebifyBuildPipeline(context.applicationContext, toolchain, keystoreManager)
+    private val notifier = BuildNotificationHelper(context.applicationContext)
     private val _session = MutableStateFlow<BuildSession?>(null)
     val session: StateFlow<BuildSession?> = _session.asStateFlow()
     private var job: Job? = null
@@ -64,6 +68,26 @@ class BuildManager(
             val s = _session.value ?: return@launch
             val r = s.result
             withContext(NonCancellable) {
+                // A4: auto-increment versionCode setelah build rilis sukses
+                if (r is BuildResult.Success && type.isRelease) {
+                    val fresh = projects.get(project.id)
+                    if (fresh != null && fresh.autoIncrementVersionCode) {
+                        val nextName = bumpPatch(fresh.versionName)
+                        projects.save(fresh.copy(versionCode = fresh.versionCode + 1, versionName = nextName))
+                        appendLog(LogLine(LogLevel.INFO, "Auto-increment: versionCode ${fresh.versionCode} → ${fresh.versionCode + 1}, versionName ${fresh.versionName} → $nextName (untuk build berikutnya)"))
+                    }
+                }
+                // A5: notifikasi bila Webify sedang di latar belakang
+                val inBackground = withContext(Dispatchers.Main) {
+                    !ProcessLifecycleOwner.get().lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)
+                }
+                if (inBackground) {
+                    when (r) {
+                        is BuildResult.Success -> notifier.notifySuccess(project.appName, r)
+                        is BuildResult.Failure -> if (r.summary != "Dibatalkan") notifier.notifyFailure(project.appName, r)
+                        null -> Unit
+                    }
+                }
                 val log = s.logs.joinToString("\n") { it.format() }
                 when (r) {
                     is BuildResult.Success -> projects.insertBuild(
@@ -114,7 +138,18 @@ class BuildManager(
 
     fun outputExists(path: String?) = path != null && File(path).exists()
 
+    private fun appendLog(line: LogLine) {
+        _session.update { it?.copy(logs = (it.logs + line).takeLast(MAX_LOG_LINES)) }
+    }
+
     companion object {
+        /** "1.0.9" → "1.0.10"; versi non-semver dibiarkan. */
+        fun bumpPatch(v: String): String {
+            val m = Regex("^(\\d+)\\.(\\d+)\\.(\\d+)(.*)$").find(v.trim()) ?: return v
+            val (maj, min, patch, rest) = m.destructured
+            return "$maj.$min.${patch.toInt() + 1}$rest"
+        }
+
         private const val MAX_LOG_LINES = 3000
         private const val MAX_LOG_CHARS = 400_000
     }

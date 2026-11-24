@@ -73,3 +73,13 @@
 
 # ---- Shim javax.lang.model.SourceVersion untuk ecj di ART ---------------------
 -keep class javax.lang.model.SourceVersion { *; }
+
+# ---- Webify: serialisasi proyek (.webify), parser, & plugin SDK -------------
+-keep class com.webify.app.data.db.** { *; }
+-keep class com.webify.app.domain.** { *; }
+-keep class com.webify.app.build.GoogleServicesParser** { *; }
+-keep class com.webify.app.build.PomParser** { *; }
+-keepclassmembers class **$$serializer { *; }
+-keepclasseswithmembers class * { kotlinx.serialization.KSerializer serializer(...); }
+-keepclassmembers class * { *** Companion; }
+-dontwarn kotlinx.serialization.**

@@ -13,7 +13,10 @@ import android.graphics.RectF
 import android.graphics.Typeface
 import android.net.Uri
 import com.webify.app.data.db.WebProjectEntity
+import com.webify.app.domain.NativeConfigCodec
+import com.webify.app.domain.NavIcon
 import com.webify.app.domain.SourceType
+import com.webify.app.domain.SystemIcons
 import com.webify.app.domain.Validators
 import java.io.File
 import java.util.zip.ZipFile
@@ -41,6 +44,7 @@ class ResourceGenerator(private val context: Context) {
         generateValues(project, ws)
         generateXml(project, ws)
         log.info("values/strings.xml, colors.xml, styles.xml, xml/network_security_config.xml dibuat")
+        generateNativeResources(project, ws, log)
         if (project.sourceType == SourceType.LOCAL_HTML_ZIP) extractLocalSite(project, ws, log)
     }
 
@@ -231,6 +235,94 @@ class ResourceGenerator(private val context: Context) {
             </paths>
             """.trimIndent()
         )
+    }
+
+    // ------------------------------------------------------------------ fitur native (B1/B3/FCM/dark)
+    private fun generateNativeResources(p: WebProjectEntity, ws: Workspace, log: BuildLogger) {
+        val drawable = File(ws.res, "drawable").apply { mkdirs() }
+        // Ikon vektor navigasi/shortcut + ikon sistem (menu, kunci)
+        val icons = NavIcon.entries.map { it.key to it.path } + listOf("menu" to SystemIcons.MENU, "lock" to SystemIcons.LOCK)
+        for ((key, path) in icons) {
+            File(drawable, "wf_ic_$key.xml").writeText(
+                """
+                <?xml version="1.0" encoding="utf-8"?>
+                <vector xmlns:android="http://schemas.android.com/apk/res/android"
+                    android:width="24dp" android:height="24dp"
+                    android:viewportWidth="24" android:viewportHeight="24">
+                    <path android:fillColor="#FFFFFFFF" android:pathData="$path"/>
+                </vector>
+                """.trimIndent()
+            )
+        }
+
+        // String shortcut & label native
+        val shortcuts = NativeConfigCodec.shortcuts(p.shortcutsJson).filter { it.shortLabel.isNotBlank() && it.targetUrl.isNotBlank() }.take(4)
+        val values = File(ws.res, "values")
+        File(values, "webify_native.xml").writeText(buildString {
+            appendLine("""<?xml version="1.0" encoding="utf-8"?>""")
+            appendLine("<resources>")
+            shortcuts.forEachIndexed { i, sc ->
+                appendLine("""    <string name="wf_sc_short_$i">${xmlString(sc.shortLabel.take(25))}</string>""")
+                appendLine("""    <string name="wf_sc_long_$i">${xmlString(sc.longLabel.ifBlank { sc.shortLabel }.take(50))}</string>""")
+            }
+            appendLine("""    <string name="wf_unlock_title">${xmlString("Buka ${p.appName}")}</string>""")
+            appendLine("</resources>")
+        })
+
+        // App Shortcuts (API 25+): res/xml/shortcuts.xml
+        if (shortcuts.isNotEmpty()) {
+            val base = if (p.sourceType == SourceType.LOCAL_HTML_ZIP) "file:///android_asset/www/index.html" else p.targetUrl
+            File(ws.res, "xml/shortcuts.xml").writeText(buildString {
+                appendLine("""<?xml version="1.0" encoding="utf-8"?>""")
+                appendLine("""<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">""")
+                shortcuts.forEachIndexed { i, sc ->
+                    val url = NativeConfigCodec.resolve(base, sc.targetUrl)
+                    appendLine("""    <shortcut android:shortcutId="wf_shortcut_$i" android:enabled="true" android:icon="@drawable/wf_ic_${NavIcon.of(sc.icon).key}"""")
+                    appendLine("""        android:shortcutShortLabel="@string/wf_sc_short_$i" android:shortcutLongLabel="@string/wf_sc_long_$i">""")
+                    appendLine("""        <intent android:action="android.intent.action.VIEW" android:targetPackage="${p.packageName}"""")
+                    appendLine("""            android:targetClass="${p.packageName}.MainActivity" android:data="${xmlAttr(url)}"/>""")
+                    appendLine("""    </shortcut>""")
+                }
+                appendLine("</shortcuts>")
+            })
+            log.info("App Shortcuts: ${shortcuts.size} item → res/xml/shortcuts.xml")
+        }
+
+        // Mode gelap otomatis: tema malam (algorithmic darkening API 33+ butuh tema gelap)
+        if (p.forceDarkMode) {
+            val night = File(ws.res, "values-night").apply { mkdirs() }
+            File(night, "styles.xml").writeText(
+                """
+                <?xml version="1.0" encoding="utf-8"?>
+                <resources>
+                    <style name="WebifyTheme" parent="android:Theme.Material.NoActionBar">
+                        <item name="android:colorPrimary">@color/colorPrimary</item>
+                        <item name="android:colorAccent">@color/colorPrimary</item>
+                        <item name="android:statusBarColor">@color/statusBar</item>
+                        <item name="android:navigationBarColor">@color/navigationBar</item>
+                        <item name="android:windowBackground">@android:color/black</item>
+                        <item name="android:windowFullscreen">${p.fullscreenMode}</item>
+                    </style>
+                </resources>
+                """.trimIndent()
+            )
+            log.info("Tema malam (values-night) dibuat untuk mode gelap otomatis")
+        }
+
+        // Firebase: google-services.json → res/values/google_services.xml
+        if (p.fcmEnabled) {
+            val path = p.googleServicesJsonPath
+                ?: throw BuildStageException(BuildStage.RESOURCES, "FCM aktif tetapi google-services.json belum diunggah (tab SDK & Integrasi)")
+            val f = File(path)
+            if (!f.exists()) throw BuildStageException(BuildStage.RESOURCES, "File google-services.json hilang, unggah ulang")
+            val cfg = try {
+                GoogleServicesParser.parse(f.readText(), p.packageName)
+            } catch (e: Exception) {
+                throw BuildStageException(BuildStage.RESOURCES, "google-services.json: ${e.message}", e)
+            }
+            File(values, "google_services.xml").writeText(GoogleServicesParser.toValuesXml(cfg))
+            log.info("google_services.xml dibuat (project_id=${cfg.projectId}, app_id=${cfg.googleAppId})")
+        }
     }
 
     // ------------------------------------------------------------------ assets/www

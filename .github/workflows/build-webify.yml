@@ -57,6 +57,9 @@ jobs:
             echo "::notice::WEBIFY_KEYSTORE_BASE64 tidak di-set — release APK ditandatangani debug key."
           fi
 
+      - name: Unit tests
+        run: ./gradlew --no-daemon --stacktrace testDebugUnitTest
+
       - name: Assemble Debug
         run: ./gradlew --no-daemon --stacktrace assembleDebug
 

@@ -38,7 +38,21 @@ object ApkPackager {
                 zw.put(dex.name, dex.readBytes(), compress = true)
                 entryCount++
             }
-            // 3. assets/**
+            // 3. Native lib dari AAR → lib/<abi>/*.so (STORED, sejajar 16 KiB)
+            if (ws.nativeLibs.exists()) {
+                ws.nativeLibs.walkTopDown().filter { it.isFile && it.extension == "so" }.sortedBy { it.path }.forEach { f ->
+                    val name = "lib/" + f.relativeTo(ws.nativeLibs).invariantSeparatorsPath
+                    if (!zw.has(name)) { zw.put(name, f.readBytes(), compress = false); entryCount++ }
+                }
+            }
+            // 4. Resource Java dari JAR library (META-INF/services, properties, dll.) di root arsip
+            if (ws.javaResources.exists()) {
+                ws.javaResources.walkTopDown().filter { it.isFile }.sortedBy { it.path }.forEach { f ->
+                    val name = f.relativeTo(ws.javaResources).invariantSeparatorsPath
+                    if (!zw.has(name)) { zw.put(name, f.readBytes(), compress = !AlignedZipWriter.shouldStore(name)); entryCount++ }
+                }
+            }
+            // 5. assets/**
             if (ws.assets.exists()) {
                 ws.assets.walkTopDown().filter { it.isFile }.sortedBy { it.path }.forEach { f ->
                     val name = "assets/" + f.relativeTo(ws.assets).invariantSeparatorsPath

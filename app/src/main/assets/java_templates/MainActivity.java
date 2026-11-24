@@ -43,6 +43,9 @@ public class MainActivity extends Activity {
     static final int REQ_PERMISSIONS_FILE = 4104;
     static final int REQ_PERMISSIONS_NOTIF = 4105;
     static final int REQ_PERMISSIONS_STORAGE = 4106;
+    static final int REQ_QR_SCAN = 4107;
+    static final int REQ_PERMISSIONS_LOCATION_BRIDGE = 4108;
+    static final int REQ_PERMISSIONS_NOTIF_BRIDGE = 4110;
 
     private LinearLayout rootColumn;
     private View statusSpacer;
@@ -54,6 +57,11 @@ public class MainActivity extends Activity {
     private WebifySplashView splashView;
     private WebifyWebViewClient webViewClient;
     private WebifyWebChromeClient chromeClient;
+    private FrameLayout rootFrame;
+    private WebifyNativeNav nativeNav;
+    private BiometricLockHelper biometric;
+    private String pendingLocationCallback;
+    private Runnable pendingNotification;
     private final Handler handler = new Handler(Looper.getMainLooper());
     private boolean splashDismissed = false;
     private boolean minSplashElapsed = false;
@@ -68,6 +76,15 @@ public class MainActivity extends Activity {
         buildLayout();
         setupWebView();
         setupSplash();
+        if (BiometricLockHelper.enabled()) {
+            biometric = new BiometricLockHelper(this);
+            biometric.lock((FrameLayout) findViewById(android.R.id.content));
+        }
+        try {
+            WebifyPlugins.onCreate(this);
+        } catch (Throwable t) {
+            Log.e(TAG, "Inisialisasi plugin gagal", t);
+        }
 
         if (savedInstanceState != null && webView.restoreState(savedInstanceState) != null) {
             dismissSplashNow();
@@ -142,6 +159,8 @@ public class MainActivity extends Activity {
     private void buildLayout() {
         FrameLayout root = new FrameLayout(this);
         root.setBackgroundColor(BuildConfig.NAV_BAR_COLOR);
+        rootFrame = root;
+        if (WebifyNativeNav.enabled()) nativeNav = new WebifyNativeNav(this);
 
         rootColumn = new LinearLayout(this);
         rootColumn.setOrientation(LinearLayout.VERTICAL);
@@ -150,10 +169,23 @@ public class MainActivity extends Activity {
         statusSpacer = new View(this);
         statusSpacer.setBackgroundColor(BuildConfig.STATUS_BAR_COLOR);
         rootColumn.addView(statusSpacer, new LinearLayout.LayoutParams(-1, 0));
+        if (nativeNav != null && BuildConfig.NAV_STYLE == 2) {
+            rootColumn.addView(nativeNav.createTopBar(), new LinearLayout.LayoutParams(-1, dp(56)));
+        }
 
         contentFrame = new FrameLayout(this);
         contentFrame.setBackgroundColor(Color.WHITE);
         rootColumn.addView(contentFrame, new LinearLayout.LayoutParams(-1, 0, 1f));
+        View banner = null;
+        try {
+            banner = WebifyPlugins.createBanner(this);
+        } catch (Throwable t) {
+            Log.e(TAG, "Banner iklan gagal dibuat", t);
+        }
+        if (banner != null) rootColumn.addView(banner, new LinearLayout.LayoutParams(-1, -2));
+        if (nativeNav != null && BuildConfig.NAV_STYLE == 1) {
+            rootColumn.addView(nativeNav.createBottomBar(), new LinearLayout.LayoutParams(-1, dp(56)));
+        }
 
         navSpacer = new View(this);
         navSpacer.setBackgroundColor(BuildConfig.NAV_BAR_COLOR);
@@ -199,6 +231,7 @@ public class MainActivity extends Activity {
                 return insets;
             }
         });
+        if (nativeNav != null && BuildConfig.NAV_STYLE == 2) nativeNav.attachDrawer(root);
         setContentView(root);
         applySystemBarAppearance();
     }
@@ -376,6 +409,12 @@ public class MainActivity extends Activity {
     }
 
     void onPageFinished(String url) {
+        if (nativeNav != null && !showingOffline) nativeNav.syncWithUrl(url);
+        try {
+            WebifyPlugins.onPageFinished(this, webView);
+        } catch (Throwable t) {
+            Log.w(TAG, "plugin onPageFinished", t);
+        }
         refreshLayout.setRefreshing(false);
         topProgress.setVisibility(View.GONE);
         if (!showingOffline) firstPageLoaded = true;
@@ -455,6 +494,14 @@ public class MainActivity extends Activity {
 
     @Override
     public void onBackPressed() {
+        if (nativeNav != null && nativeNav.isDrawerOpen()) {
+            nativeNav.closeDrawer();
+            return;
+        }
+        if (biometric != null && biometric.isLocked()) {
+            super.onBackPressed();
+            return;
+        }
         if (chromeClient != null && chromeClient.isCustomViewShowing()) {
             chromeClient.onHideCustomView();
             return;
@@ -477,13 +524,171 @@ public class MainActivity extends Activity {
         super.onActivityResult(requestCode, resultCode, data);
         if (requestCode == REQ_FILE_CHOOSER && chromeClient != null) {
             chromeClient.onFileChooserResult(resultCode, data);
+        } else if (requestCode == REQ_QR_SCAN) {
+            String cb = data != null ? data.getStringExtra("callback") : null;
+            String text = data != null ? data.getStringExtra("result") : null;
+            if (cb != null) deliverJs(cb, resultCode == RESULT_OK && text != null ? jsonString(text) : "null");
+        } else if (biometric != null) {
+            biometric.onActivityResult(requestCode, resultCode);
         }
     }
 
     @Override
     public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+        if (requestCode == REQ_PERMISSIONS_LOCATION_BRIDGE) {
+            String cb = pendingLocationCallback;
+            pendingLocationCallback = null;
+            if (cb != null) {
+                if (hasPermission(PERM_FINE_LOCATION) || hasPermission(PERM_COARSE_LOCATION)) fetchLocation(cb);
+                else deliverJs(cb, "{error:'permission_denied'}");
+            }
+            return;
+        }
+        if (requestCode == REQ_PERMISSIONS_NOTIF_BRIDGE) {
+            Runnable r = pendingNotification;
+            pendingNotification = null;
+            if (r != null && grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED) r.run();
+            return;
+        }
         if (chromeClient != null) chromeClient.onPermissionsResult(requestCode, permissions, grantResults);
+    }
+
+    @Override
+    protected void onStart() {
+        super.onStart();
+        if (biometric != null) biometric.onStart((FrameLayout) findViewById(android.R.id.content));
+    }
+
+    @Override
+    protected void onStop() {
+        if (biometric != null) biometric.onStop();
+        super.onStop();
+    }
+
+    // ------------------------------------------------------------------ Dipakai WebifyJsBridge & plugin
+    private static final java.util.regex.Pattern CALLBACK_NAME = java.util.regex.Pattern.compile("^[A-Za-z_$][A-Za-z0-9_$]*(\\.[A-Za-z_$][A-Za-z0-9_$]*)*$");
+
+    /** Panggil fungsi JavaScript callback(argJs) dengan validasi nama untuk mencegah injeksi. */
+    void deliverJs(final String callback, final String argJs) {
+        if (callback == null || !CALLBACK_NAME.matcher(callback).matches()) {
+            Log.w(TAG, "Nama callback JS tidak valid: " + callback);
+            return;
+        }
+        runOnUiThread(new Runnable() {
+            @Override public void run() {
+                webView.evaluateJavascript("(function(){try{if(typeof " + callback + "==='function')" + callback + "(" + argJs + ");}catch(e){console.error(e);}})();", null);
+            }
+        });
+    }
+
+    static String jsonString(String s) {
+        StringBuilder sb = new StringBuilder("\"");
+        for (int i = 0; i < s.length(); i++) {
+            char c = s.charAt(i);
+            switch (c) {
+                case '"': sb.append("\\\""); break;
+                case '\\': sb.append("\\\\"); break;
+                case '\n': sb.append("\\n"); break;
+                case '\r': sb.append("\\r"); break;
+                case '\t': sb.append("\\t"); break;
+                default:
+                    if (c < 0x20 || c == 0x2028 || c == 0x2029) sb.append(String.format("\\u%04x", (int) c));
+                    else sb.append(c);
+            }
+        }
+        return sb.append('"').toString();
+    }
+
+    /** Ubah warna status bar dari JavaScript (WebifyBridge.setStatusBarColor). */
+    void setStatusBarColorDynamic(int color, boolean lightIcons) {
+        statusSpacer.setBackgroundColor(color);
+        Window w = getWindow();
+        if (Build.VERSION.SDK_INT >= 30) {
+            WindowInsetsController c = w.getInsetsController();
+            if (c != null) c.setSystemBarsAppearance(lightIcons ? 0 : WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS,
+                    WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS);
+        } else {
+            View decor = w.getDecorView();
+            int flags = decor.getSystemUiVisibility();
+            if (lightIcons) flags &= ~View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR; else flags |= View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR;
+            decor.setSystemUiVisibility(flags);
+        }
+    }
+
+    /** Jalankan aksi notifikasi setelah memastikan izin POST_NOTIFICATIONS (Android 13+). */
+    void withNotificationPermission(Runnable action) {
+        if (Build.VERSION.SDK_INT >= 33 && !hasPermission("android.permission.POST_NOTIFICATIONS")) {
+            pendingNotification = action;
+            requestPermissions(new String[]{"android.permission.POST_NOTIFICATIONS"}, REQ_PERMISSIONS_NOTIF_BRIDGE);
+        } else {
+            action.run();
+        }
+    }
+
+    /** WebifyBridge.getLocation(callback): minta izin bila perlu, lalu kirim koordinat ke JS. */
+    void requestLocationForJs(String callback) {
+        if (hasPermission(PERM_FINE_LOCATION) || hasPermission(PERM_COARSE_LOCATION)) {
+            fetchLocation(callback);
+        } else {
+            pendingLocationCallback = callback;
+            requestPermissions(new String[]{PERM_FINE_LOCATION, PERM_COARSE_LOCATION}, REQ_PERMISSIONS_LOCATION_BRIDGE);
+        }
+    }
+
+    @SuppressWarnings({"MissingPermission", "deprecation"})
+    private void fetchLocation(final String callback) {
+        final android.location.LocationManager lm = (android.location.LocationManager) getSystemService(Context.LOCATION_SERVICE);
+        if (lm == null) { deliverJs(callback, "{error:'unavailable'}"); return; }
+        try {
+            android.location.Location best = null;
+            for (String provider : lm.getProviders(true)) {
+                android.location.Location l = lm.getLastKnownLocation(provider);
+                if (l != null && (best == null || l.getTime() > best.getTime())) best = l;
+            }
+            if (best != null && System.currentTimeMillis() - best.getTime() < 120_000L) {
+                deliverJs(callback, locationJson(best));
+                return;
+            }
+            final android.location.Location fallback = best;
+            String provider = lm.isProviderEnabled(android.location.LocationManager.GPS_PROVIDER)
+                    ? android.location.LocationManager.GPS_PROVIDER
+                    : android.location.LocationManager.NETWORK_PROVIDER;
+            if (!lm.isProviderEnabled(provider)) {
+                deliverJs(callback, fallback != null ? locationJson(fallback) : "{error:'location_disabled'}");
+                return;
+            }
+            final boolean[] done = new boolean[1];
+            final android.location.LocationListener listener = new android.location.LocationListener() {
+                @Override public void onLocationChanged(android.location.Location location) {
+                    if (done[0]) return;
+                    done[0] = true;
+                    lm.removeUpdates(this);
+                    deliverJs(callback, locationJson(location));
+                }
+                @Override public void onStatusChanged(String p, int status, Bundle extras) { }
+                @Override public void onProviderEnabled(String p) { }
+                @Override public void onProviderDisabled(String p) { }
+            };
+            lm.requestLocationUpdates(provider, 0L, 0f, listener, Looper.getMainLooper());
+            handler.postDelayed(new Runnable() {
+                @Override public void run() {
+                    if (done[0]) return;
+                    done[0] = true;
+                    lm.removeUpdates(listener);
+                    deliverJs(callback, fallback != null ? locationJson(fallback) : "{error:'timeout'}");
+                }
+            }, 15_000L);
+        } catch (SecurityException e) {
+            deliverJs(callback, "{error:'permission_denied'}");
+        } catch (Exception e) {
+            deliverJs(callback, "{error:" + jsonString(String.valueOf(e.getMessage())) + "}");
+        }
+    }
+
+    private static String locationJson(android.location.Location l) {
+        return "{lat:" + l.getLatitude() + ",lng:" + l.getLongitude() + ",accuracy:" + l.getAccuracy()
+                + ",altitude:" + l.getAltitude() + ",provider:" + jsonString(String.valueOf(l.getProvider())) + ",time:" + l.getTime() + "}";
     }
 
     @Override
@@ -515,6 +720,11 @@ public class MainActivity extends Activity {
     @Override
     protected void onDestroy() {
         handler.removeCallbacksAndMessages(null);
+        try {
+            WebifyPlugins.onDestroy(this);
+        } catch (Throwable t) {
+            Log.w(TAG, "plugin onDestroy", t);
+        }
         try {
             webView.stopLoading();
             webView.setWebChromeClient(null);

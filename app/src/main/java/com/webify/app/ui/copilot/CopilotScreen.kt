@@ -33,6 +33,7 @@ import androidx.compose.material.icons.automirrored.rounded.Send
 import androidx.compose.material.icons.rounded.ArrowDropDown
 import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.Check
+import androidx.compose.material.icons.rounded.Collections
 import androidx.compose.material.icons.rounded.ContentCopy
 import androidx.compose.material.icons.rounded.DeleteSweep
 import androidx.compose.material.icons.rounded.Hub
@@ -130,7 +131,7 @@ private enum class InputMode(val placeholder: String) {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun CopilotScreen(container: AppContainer) {
+fun CopilotScreen(container: AppContainer, onOpenAssets: (String) -> Unit = {}) {
     val vm = appViewModel { AiAssistantViewModel(it.aiService, it.chatRepository, it.projectRepository, it.securePrefs, it.copilotBus) }
     val state by vm.state.collectAsStateWithLifecycle()
     val models by vm.models.collectAsStateWithLifecycle()
@@ -187,6 +188,11 @@ fun CopilotScreen(container: AppContainer) {
                     }
                 },
                 actions = {
+                    state.activeProject?.let { ap ->
+                        IconButton(onClick = { onOpenAssets(ap.id) }) {
+                            Icon(Icons.Rounded.Collections, "Aset Play Store", Modifier.size(Dimens.IconBar))
+                        }
+                    }
                     IconButton(onClick = { vm.clearConversation() }) { Icon(Icons.Rounded.DeleteSweep, "Hapus percakapan", Modifier.size(Dimens.IconBar)) }
                     IconButton(onClick = { showSettings = true }) { Icon(Icons.Rounded.Settings, "Pengaturan AI", Modifier.size(Dimens.IconBar)) }
                 },

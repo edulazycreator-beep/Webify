@@ -4,6 +4,8 @@ import androidx.room.Entity
 import androidx.room.ForeignKey
 import androidx.room.Index
 import androidx.room.PrimaryKey
+import com.webify.app.domain.NavStyle
+import kotlinx.serialization.Serializable
 import com.webify.app.domain.BuildStatus
 import com.webify.app.domain.BuildType
 import com.webify.app.domain.ChatRole
@@ -15,6 +17,7 @@ import com.webify.app.domain.StatusBarStyle
 import com.webify.app.domain.WebCacheMode
 import java.util.UUID
 
+@Serializable
 @Entity(tableName = "web_projects", indices = [Index("updatedAt")])
 data class WebProjectEntity(
     // Identitas & versioning
@@ -99,7 +102,34 @@ data class WebProjectEntity(
     val customJsOnPageFinished: String = "",
 
     // Signing
-    val selectedKeystoreId: String? = null
+    val selectedKeystoreId: String? = null,
+
+    // ---------------- DB v3 ----------------
+    // Build
+    val autoIncrementVersionCode: Boolean = true,
+
+    // Navigasi native, shortcut, keamanan, tentang (aplikasi output)
+    val navStyle: NavStyle = NavStyle.NONE,
+    /** JSON List<NavMenuItem> (maks 5). */
+    val navItemsJson: String = "",
+    /** JSON List<AppShortcutItem> (maks 4). */
+    val shortcutsJson: String = "",
+    val enableBiometricLock: Boolean = false,
+    val enableAboutDialog: Boolean = true,
+    val privacyPolicyUrl: String = "",
+
+    // Plugin SDK (jalur AAR)
+    val fcmEnabled: Boolean = false,
+    val googleServicesJsonPath: String? = null,
+    val admobEnabled: Boolean = false,
+    val admobAppId: String = "",
+    val admobBannerId: String = "",
+    val admobInterstitialId: String = "",
+    val qrScannerEnabled: Boolean = false,
+    /** Koordinat Maven tambahan, satu per baris (group:artifact:version). */
+    val extraDependencies: String = "",
+    /** Path file .aar/.jar lokal yang diimpor, satu per baris. */
+    val localLibraries: String = ""
 )
 
 @Entity(tableName = "keystores")

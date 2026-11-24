@@ -159,6 +159,186 @@ public class WebifyJsBridge {
         });
     }
 
+    // ------------------------------------------------------------------ B4: notifikasi lokal terjadwal
+    @JavascriptInterface
+    public void scheduleNotification(final String title, final String body, final int delaySeconds) {
+        activity.runOnUiThread(new Runnable() {
+            @Override public void run() {
+                activity.withNotificationPermission(new Runnable() {
+                    @Override public void run() { doSchedule(title, body, Math.max(0, delaySeconds)); }
+                });
+            }
+        });
+    }
+
+    private void doSchedule(String title, String body, int delaySeconds) {
+        try {
+            int id = (int) (System.currentTimeMillis() & 0x7FFFFFF);
+            Intent i = new Intent(activity, WebifyNotificationReceiver.class);
+            i.putExtra(WebifyNotificationReceiver.EXTRA_TITLE, title);
+            i.putExtra(WebifyNotificationReceiver.EXTRA_BODY, body);
+            i.putExtra(WebifyNotificationReceiver.EXTRA_ID, id);
+            if (delaySeconds == 0) {
+                WebifyNotificationReceiver.show(activity, id, title, body);
+                return;
+            }
+            android.app.PendingIntent pi = android.app.PendingIntent.getBroadcast(activity, id, i,
+                    android.app.PendingIntent.FLAG_UPDATE_CURRENT | android.app.PendingIntent.FLAG_IMMUTABLE);
+            android.app.AlarmManager am = (android.app.AlarmManager) activity.getSystemService(Context.ALARM_SERVICE);
+            long at = System.currentTimeMillis() + delaySeconds * 1000L;
+            boolean exactAllowed = Build.VERSION.SDK_INT < 31 || am.canScheduleExactAlarms();
+            if (Build.VERSION.SDK_INT >= 23 && exactAllowed) {
+                am.setExactAndAllowWhileIdle(android.app.AlarmManager.RTC_WAKEUP, at, pi);
+            } else if (Build.VERSION.SDK_INT >= 23) {
+                am.setAndAllowWhileIdle(android.app.AlarmManager.RTC_WAKEUP, at, pi);
+            } else {
+                am.set(android.app.AlarmManager.RTC_WAKEUP, at, pi);
+            }
+        } catch (Exception e) {
+            Log.e(TAG, "scheduleNotification", e);
+            Toast.makeText(activity, "Gagal menjadwalkan notifikasi", Toast.LENGTH_SHORT).show();
+        }
+    }
+
+    // ------------------------------------------------------------------ B4: warna status bar dinamis
+    @JavascriptInterface
+    public void setStatusBarColor(final String hexColor, final boolean lightIcons) {
+        activity.runOnUiThread(new Runnable() {
+            @Override public void run() {
+                try {
+                    activity.setStatusBarColorDynamic(android.graphics.Color.parseColor(hexColor), lightIcons);
+                } catch (IllegalArgumentException e) {
+                    Log.w(TAG, "Warna tidak valid: " + hexColor);
+                }
+            }
+        });
+    }
+
+    // ------------------------------------------------------------------ B4: cetak / simpan PDF
+    @JavascriptInterface
+    public void print() {
+        activity.runOnUiThread(new Runnable() {
+            @Override public void run() {
+                try {
+                    android.print.PrintManager pm = (android.print.PrintManager) activity.getSystemService(Context.PRINT_SERVICE);
+                    String job = BuildConfig.APP_NAME + " - " + (activity.webView.getTitle() == null ? "Dokumen" : activity.webView.getTitle());
+                    pm.print(job, activity.webView.createPrintDocumentAdapter(job), new android.print.PrintAttributes.Builder().build());
+                } catch (Exception e) {
+                    Toast.makeText(activity, "Cetak tidak tersedia: " + e.getMessage(), Toast.LENGTH_SHORT).show();
+                }
+            }
+        });
+    }
+
+    // ------------------------------------------------------------------ B4: bagikan file (base64/data URL/URL)
+    @JavascriptInterface
+    public void shareFile(final String base64OrUrl, final String fileName, final String mimeType) {
+        new Thread(new Runnable() {
+            @Override public void run() {
+                try {
+                    String name = (fileName == null || fileName.length() == 0) ? "file_" + System.currentTimeMillis() : fileName.replaceAll("[\\\\/:*?\"<>|]", "_");
+                    String mime = (mimeType == null || mimeType.length() == 0) ? "application/octet-stream" : mimeType;
+                    File dir = new File(activity.getCacheDir(), "webify_share");
+                    if (!dir.exists()) dir.mkdirs();
+                    File out = new File(dir, name);
+                    String src = base64OrUrl == null ? "" : base64OrUrl.trim();
+                    if (src.startsWith("http://") || src.startsWith("https://")) {
+                        java.net.HttpURLConnection c = (java.net.HttpURLConnection) new java.net.URL(src).openConnection();
+                        String cookies = android.webkit.CookieManager.getInstance().getCookie(src);
+                        if (cookies != null) c.setRequestProperty("Cookie", cookies);
+                        c.setConnectTimeout(15000);
+                        c.setReadTimeout(30000);
+                        java.io.InputStream in = c.getInputStream();
+                        FileOutputStream fos = new FileOutputStream(out);
+                        try {
+                            byte[] buf = new byte[16384];
+                            int r;
+                            while ((r = in.read(buf)) > 0) fos.write(buf, 0, r);
+                        } finally {
+                            fos.close();
+                            in.close();
+                            c.disconnect();
+                        }
+                    } else {
+                        String b64 = src.startsWith("data:") ? src.substring(src.indexOf(',') + 1) : src;
+                        FileOutputStream fos = new FileOutputStream(out);
+                        try { fos.write(Base64.decode(b64, Base64.DEFAULT)); } finally { fos.close(); }
+                    }
+                    final Uri uri = WebifyFileProvider.getUriForFile(activity, out);
+                    final String finalMime = mime;
+                    activity.runOnUiThread(new Runnable() {
+                        @Override public void run() {
+                            Intent send = new Intent(Intent.ACTION_SEND);
+                            send.setType(finalMime);
+                            send.putExtra(Intent.EXTRA_STREAM, uri);
+                            send.setClipData(ClipData.newRawUri("file", uri));
+                            send.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+                            activity.startActivity(Intent.createChooser(send, "Bagikan"));
+                        }
+                    });
+                } catch (final Exception e) {
+                    Log.e(TAG, "shareFile", e);
+                    showToast("Gagal membagikan file: " + e.getMessage());
+                }
+            }
+        }).start();
+    }
+
+    // ------------------------------------------------------------------ B4: lokasi
+    @JavascriptInterface
+    public void getLocation(final String jsCallbackName) {
+        activity.runOnUiThread(new Runnable() {
+            @Override public void run() { activity.requestLocationForJs(jsCallbackName); }
+        });
+    }
+
+    // ------------------------------------------------------------------ B5: tentang & rating
+    @JavascriptInterface
+    public void openAboutDialog() {
+        activity.runOnUiThread(new Runnable() {
+            @Override public void run() { WebifyAboutDialog.show(activity); }
+        });
+    }
+
+    @JavascriptInterface
+    public void rateApp() {
+        activity.runOnUiThread(new Runnable() {
+            @Override public void run() { WebifyAboutDialog.rateApp(activity); }
+        });
+    }
+
+    // ------------------------------------------------------------------ Plugin SDK (no-op bila nonaktif)
+    @JavascriptInterface
+    public boolean showInterstitialAd() {
+        final boolean[] shown = new boolean[]{BuildConfig.ADMOB_ENABLED};
+        activity.runOnUiThread(new Runnable() {
+            @Override public void run() {
+                try { WebifyPlugins.showInterstitial(activity); } catch (Throwable t) { Log.w(TAG, "interstitial", t); }
+            }
+        });
+        return shown[0];
+    }
+
+    @JavascriptInterface
+    public void scanQrCode(final String jsCallbackName) {
+        activity.runOnUiThread(new Runnable() {
+            @Override public void run() {
+                boolean started = false;
+                try { started = WebifyPlugins.scanQr(activity, jsCallbackName); } catch (Throwable t) { Log.w(TAG, "scanQr", t); }
+                if (!started) activity.deliverJs(jsCallbackName, "null");
+            }
+        });
+    }
+
+    @JavascriptInterface
+    public void getFcmToken(final String jsCallbackName) {
+        activity.runOnUiThread(new Runnable() {
+            @Override public void run() {
+                try { WebifyPlugins.requestFcmToken(activity, jsCallbackName); } catch (Throwable t) { activity.deliverJs(jsCallbackName, "null"); }
+            }
+        });
+    }
+
     /** Dipakai helper unduhan blob: — menyimpan base64 ke folder Downloads. */
     @JavascriptInterface
     public void saveBase64File(final String base64, final String fileName, final String mime) {

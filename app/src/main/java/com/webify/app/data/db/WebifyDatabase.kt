@@ -9,7 +9,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
 
 @Database(
     entities = [WebProjectEntity::class, KeystoreEntity::class, BuildRecordEntity::class, ChatMessageEntity::class],
-    version = 2,
+    version = 3,
     exportSchema = false
 )
 abstract class WebifyDatabase : RoomDatabase() {
@@ -34,9 +34,22 @@ abstract class WebifyDatabase : RoomDatabase() {
             }
         }
 
+        /** v2 → v3: navigasi native, shortcut, biometrik, plugin SDK, auto-increment. */
+        val MIGRATION_2_3 = object : Migration(2, 3) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                val ints = listOf("autoIncrementVersionCode" to 1, "enableBiometricLock" to 0, "enableAboutDialog" to 1,
+                    "fcmEnabled" to 0, "admobEnabled" to 0, "qrScannerEnabled" to 0)
+                ints.forEach { (n, d) -> db.execSQL("ALTER TABLE web_projects ADD COLUMN `$n` INTEGER NOT NULL DEFAULT $d") }
+                val texts = listOf("navStyle" to "NONE", "navItemsJson" to "", "shortcutsJson" to "", "privacyPolicyUrl" to "",
+                    "admobAppId" to "", "admobBannerId" to "", "admobInterstitialId" to "", "extraDependencies" to "", "localLibraries" to "")
+                texts.forEach { (n, d) -> db.execSQL("ALTER TABLE web_projects ADD COLUMN `$n` TEXT NOT NULL DEFAULT '$d'") }
+                db.execSQL("ALTER TABLE web_projects ADD COLUMN `googleServicesJsonPath` TEXT")
+            }
+        }
+
         fun create(context: Context): WebifyDatabase =
             Room.databaseBuilder(context.applicationContext, WebifyDatabase::class.java, "webify.db")
-                .addMigrations(MIGRATION_1_2)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
                 .fallbackToDestructiveMigrationOnDowngrade()
                 .build()
     }

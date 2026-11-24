@@ -29,14 +29,28 @@ class Aapt2Wrapper(private val aapt2: File, private val androidJar: File) {
      * @param protoFormat true untuk Android App Bundle (menghasilkan proto_resources.ap_ berisi
      * AndroidManifest.xml format protobuf & resources.pb).
      */
-    suspend fun link(project: WebProjectEntity, ws: Workspace, protoFormat: Boolean, log: BuildLogger): File {
+    /** Kompilasi folder res milik library AAR menjadi arsip flat (dipakai sebagai overlay saat link). */
+    suspend fun compileDir(resDir: File, outZip: File, log: BuildLogger) {
+        ensureBinary()
+        outZip.parentFile?.mkdirs()
+        run(listOf(aapt2.absolutePath, "compile", "--dir", resDir.absolutePath, "-o", outZip.absolutePath),
+            resDir.parentFile ?: resDir, log, "aapt2 compile (${resDir.parentFile?.name})")
+        if (!outZip.exists()) throw BuildStageException(BuildStage.DEPENDENCIES, "aapt2 compile gagal untuk ${resDir.path}")
+    }
+
+    suspend fun link(
+        project: WebProjectEntity,
+        ws: Workspace,
+        protoFormat: Boolean,
+        log: BuildLogger,
+        deps: DependencySet = DependencySet.EMPTY
+    ): File {
         ensureBinary()
         val out = if (protoFormat) ws.protoResourcesAp else ws.resourcesAp
         val args = mutableListOf(
             aapt2.absolutePath, "link",
             "-I", androidJar.absolutePath,
             "--manifest", ws.manifest.absolutePath,
-            "-R", ws.compiledResZip.absolutePath,
             "--auto-add-overlay",
             "--java", ws.src.absolutePath,
             "--min-sdk-version", project.minSdk.toString(),
@@ -46,6 +60,14 @@ class Aapt2Wrapper(private val aapt2: File, private val androidJar: File) {
             "--no-version-vectors",
             "-o", out.absolutePath
         )
+        // Resource library sebagai overlay (dependensi terdalam dulu), resource aplikasi paling akhir agar selalu menang
+        deps.compiledResZips.forEach { args += listOf("-R", it.absolutePath) }
+        args += listOf("-R", ws.compiledResZip.absolutePath)
+        val extra = deps.extraPackages.filter { it != project.packageName }
+        if (extra.isNotEmpty()) {
+            args += listOf("--extra-packages", extra.joinToString(":"))
+            log.info("aapt2 link: ${deps.compiledResZips.size} overlay library, R.java untuk ${extra.size} paket tambahan")
+        }
         if (protoFormat) args += "--proto-format"
         run(args, ws.root, log, if (protoFormat) "aapt2 link (proto/AAB)" else "aapt2 link (APK)")
         if (!out.exists()) throw BuildStageException(BuildStage.AAPT2, "aapt2 link tidak menghasilkan ${out.name}")

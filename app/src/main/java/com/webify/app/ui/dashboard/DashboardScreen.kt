@@ -1,5 +1,9 @@
 package com.webify.app.ui.dashboard
 
+import androidx.compose.material.icons.rounded.ExpandMore
+import androidx.compose.material.icons.rounded.IosShare
+import androidx.compose.material.icons.rounded.Collections
+import androidx.compose.material.icons.rounded.FileOpen
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material.icons.rounded.MoreVert
 import com.webify.app.ui.components.LocalDockInset
@@ -100,8 +104,17 @@ import java.io.File
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun DashboardScreen(container: AppContainer, onOpenProject: (String) -> Unit, onOpenConsole: () -> Unit) {
-    val vm = appViewModel { DashboardViewModel(it.projectRepository, it.keystoreRepository, it.buildManager) }
+fun DashboardScreen(
+    container: AppContainer,
+    onOpenProject: (String) -> Unit,
+    onOpenConsole: () -> Unit,
+    onOpenAssets: (String) -> Unit
+) {
+    val vm = appViewModel { DashboardViewModel(it.projectRepository, it.keystoreRepository, it.buildManager, it.archiveManager) }
+    val ctx = androidx.compose.ui.platform.LocalContext.current
+    val importer = androidx.activity.compose.rememberLauncherForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.OpenDocument()
+    ) { uri -> if (uri != null) vm.importBundle(uri) { id -> onOpenProject(id) } }
     val state by vm.state.collectAsStateWithLifecycle()
     val session by container.buildManager.session.collectAsStateWithLifecycle()
     val ui by container.securePrefs.uiSettings.collectAsStateWithLifecycle()
@@ -129,7 +142,10 @@ fun DashboardScreen(container: AppContainer, onOpenProject: (String) -> Unit, on
             verticalArrangement = Arrangement.spacedBy(Dimens.SectionGap)
         ) {
             item(span = { GridItemSpan(maxLineSpan) }) {
-                Header(ui = ui, onUi = { container.securePrefs.saveUi(it) }, onCreate = { showCreate = true })
+                Header(
+                    ui = ui, onUi = { container.securePrefs.saveUi(it) }, onCreate = { showCreate = true },
+                    onImport = { importer.launch(arrayOf("*/*")) }
+                )
             }
             item(span = { GridItemSpan(maxLineSpan) }) {
                 Row(Modifier.fillMaxWidth().height(IntrinsicSize.Max), horizontalArrangement = Arrangement.spacedBy(Dimens.SectionGap)) {
@@ -207,7 +223,9 @@ fun DashboardScreen(container: AppContainer, onOpenProject: (String) -> Unit, on
                     onBuild = { if (vm.quickBuild(p)) onOpenConsole() },
                     onEdit = { onOpenProject(p.id) },
                     onClone = { vm.clone(p) },
-                    onDelete = { toDelete = p }
+                    onDelete = { toDelete = p },
+                    onExport = { vm.export(p) { f -> com.webify.app.util.FileActions.share(ctx, f) } },
+                    onAssets = { onOpenAssets(p.id) }
                 )
             }
         }
@@ -215,8 +233,8 @@ fun DashboardScreen(container: AppContainer, onOpenProject: (String) -> Unit, on
 
     if (showCreate) CreateProjectDialog(
         onDismiss = { showCreate = false },
-        onCreate = { name, url, pkg ->
-            vm.create(name, url, pkg) { id -> showCreate = false; onOpenProject(id) }
+        onCreate = { name, url, pkg, template ->
+            vm.create(name, url, pkg, template.apply) { id -> showCreate = false; onOpenProject(id) }
         }
     )
 
@@ -235,7 +253,7 @@ fun DashboardScreen(container: AppContainer, onOpenProject: (String) -> Unit, on
 }
 
 @Composable
-private fun Header(ui: UiSettings, onUi: (UiSettings) -> Unit, onCreate: () -> Unit) {
+private fun Header(ui: UiSettings, onUi: (UiSettings) -> Unit, onCreate: () -> Unit, onImport: () -> Unit) {
     var menu by remember { mutableStateOf(false) }
     Row(
         Modifier.fillMaxWidth().padding(top = 8.dp),
@@ -272,6 +290,12 @@ private fun Header(ui: UiSettings, onUi: (UiSettings) -> Unit, onCreate: () -> U
                 )
             }
             DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
+                DropdownMenuItem(
+                    text = { Text("Impor proyek (.webify)") },
+                    leadingIcon = { Icon(Icons.Rounded.FileOpen, null, Modifier.size(Dimens.IconInline)) },
+                    onClick = { menu = false; onImport() }
+                )
+                HorizontalDivider()
                 DropdownMenuItem(text = { Text("Ikuti sistem") }, leadingIcon = { Icon(Icons.Rounded.SettingsBrightness, null, Modifier.size(Dimens.IconInline)) }, onClick = { onUi(ui.copy(darkMode = null)); menu = false })
                 DropdownMenuItem(text = { Text("Terang") }, leadingIcon = { Icon(Icons.Rounded.LightMode, null, Modifier.size(Dimens.IconInline)) }, onClick = { onUi(ui.copy(darkMode = false)); menu = false })
                 DropdownMenuItem(text = { Text("Gelap (Obsidian)") }, leadingIcon = { Icon(Icons.Rounded.DarkMode, null, Modifier.size(Dimens.IconInline)) }, onClick = { onUi(ui.copy(darkMode = true)); menu = false })
@@ -293,7 +317,9 @@ private fun ProjectCard(
     onBuild: () -> Unit,
     onEdit: () -> Unit,
     onClone: () -> Unit,
-    onDelete: () -> Unit
+    onDelete: () -> Unit,
+    onExport: () -> Unit,
+    onAssets: () -> Unit
 ) {
     Surface(
         onClick = onEdit,
@@ -349,6 +375,16 @@ private fun ProjectCard(
                             onClick = { menu = false; onEdit() }
                         )
                         DropdownMenuItem(
+                            text = { Text("Aset Play Store") },
+                            leadingIcon = { Icon(Icons.Rounded.Collections, null, Modifier.size(Dimens.IconInline)) },
+                            onClick = { menu = false; onAssets() }
+                        )
+                        DropdownMenuItem(
+                            text = { Text("Export .webify") },
+                            leadingIcon = { Icon(Icons.Rounded.IosShare, null, Modifier.size(Dimens.IconInline)) },
+                            onClick = { menu = false; onExport() }
+                        )
+                        DropdownMenuItem(
                             text = { Text("Duplikat proyek") },
                             leadingIcon = { Icon(Icons.Rounded.ContentCopy, null, Modifier.size(Dimens.IconInline)) },
                             onClick = { menu = false; onClone() }
@@ -390,7 +426,9 @@ fun ProjectIcon(p: WebProjectEntity, sizeDp: Int) {
 }
 
 @Composable
-private fun CreateProjectDialog(onDismiss: () -> Unit, onCreate: (String, String, String) -> Unit) {
+private fun CreateProjectDialog(onDismiss: () -> Unit, onCreate: (String, String, String, ProjectTemplate) -> Unit) {
+    var template by rememberSaveable { mutableStateOf(ProjectTemplate.BLANK) }
+    var showTemplates by remember { mutableStateOf(false) }
     var name by rememberSaveable { mutableStateOf("") }
     var url by rememberSaveable { mutableStateOf("https://") }
     var pkg by rememberSaveable { mutableStateOf("") }
@@ -405,6 +443,23 @@ private fun CreateProjectDialog(onDismiss: () -> Unit, onCreate: (String, String
         title = { Text("Proyek Baru") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(Dimens.FieldGap)) {
+                Surface(
+                    onClick = { showTemplates = true },
+                    shape = RoundedCornerShape(Dimens.RadiusControl),
+                    color = MaterialTheme.colorScheme.primaryContainer,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(Modifier.padding(horizontal = 12.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Icon(template.icon, null, Modifier.size(Dimens.IconInline), tint = MaterialTheme.colorScheme.onPrimaryContainer)
+                        Spacer(Modifier.width(Dimens.IconTextGap))
+                        Column(Modifier.weight(1f)) {
+                            Text("Mulai dari Template", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onPrimaryContainer)
+                            Text(template.title, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold,
+                                color = MaterialTheme.colorScheme.onPrimaryContainer, maxLines = 1)
+                        }
+                        Icon(Icons.Rounded.ExpandMore, null, Modifier.size(Dimens.IconInline), tint = MaterialTheme.colorScheme.onPrimaryContainer)
+                    }
+                }
                 LabeledField("Nama aplikasi", name, { name = it }, placeholder = "Toko Saya")
                 LabeledField("URL website", url, { url = it.trim() }, error = if (url.length > 8) urlError else null,
                     mono = true, keyboardType = KeyboardType.Uri)
@@ -416,9 +471,12 @@ private fun CreateProjectDialog(onDismiss: () -> Unit, onCreate: (String, String
         confirmButton = {
             TextButton(
                 enabled = name.isNotBlank() && pkgError == null && urlError == null,
-                onClick = { onCreate(name, url, effectivePkg) }
+                onClick = { onCreate(name, url, effectivePkg, template) }
             ) { Text("Buat") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Batal") } }
     )
+    if (showTemplates) {
+        TemplateGallerySheet(selected = template, onDismiss = { showTemplates = false }) { template = it; showTemplates = false }
+    }
 }

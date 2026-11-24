@@ -33,6 +33,9 @@ class AppContainer(app: Application) {
     val toolchain = Toolchain(app)
     val aiService = AiService(securePrefs)
     val copilotBus = CopilotBus()
+    /** Permintaan navigasi dari luar Compose (notifikasi build → konsol). */
+    val navRequests = kotlinx.coroutines.flow.MutableStateFlow<String?>(null)
+    val archiveManager = com.webify.app.data.repo.ProjectArchiveManager(app, database.projectDao())
     val buildManager = BuildManager(app, appScope, projectRepository, keystoreManager, toolchain)
 }
 

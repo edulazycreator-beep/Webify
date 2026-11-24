@@ -17,10 +17,13 @@ import com.webify.app.data.db.BuildRecordEntity
 import com.webify.app.data.db.KeystoreEntity
 import com.webify.app.data.db.WebProjectEntity
 import com.webify.app.data.repo.KeystoreRepository
+import com.webify.app.data.repo.ProjectArchiveManager
 import com.webify.app.data.repo.ProjectRepository
 import com.webify.app.domain.BuildType
 import com.webify.app.domain.SourceType
 import com.webify.app.domain.Validators
+import com.webify.app.build.GoogleServicesParser
+import com.webify.app.data.web.WebsiteMetadataExtractor
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
@@ -58,7 +61,8 @@ data class DashboardState(
 class DashboardViewModel(
     private val repo: ProjectRepository,
     keystores: KeystoreRepository,
-    private val buildManager: BuildManager
+    private val buildManager: BuildManager,
+    private val archive: ProjectArchiveManager
 ) : ViewModel() {
     private val query = MutableStateFlow("")
     private val _messages = MutableSharedFlow<String>(extraBufferCapacity = 4)
@@ -75,10 +79,18 @@ class DashboardViewModel(
 
     fun setQuery(q: String) { query.value = q }
 
-    fun create(name: String, url: String, pkg: String, onCreated: (String) -> Unit) = viewModelScope.launch {
+    fun create(
+        name: String,
+        url: String,
+        pkg: String,
+        template: (WebProjectEntity) -> WebProjectEntity = { it },
+        onCreated: (String) -> Unit
+    ) = viewModelScope.launch {
         try {
             if (repo.isPackageTaken(pkg, "")) { _messages.emit("Package name sudah dipakai proyek lain"); return@launch }
             val p = repo.create(name, url, pkg)
+            val templated = template(p)
+            if (templated != p) repo.save(templated)
             onCreated(p.id)
         } catch (e: Exception) {
             _messages.emit(e.message ?: "Gagal membuat proyek")
@@ -89,6 +101,20 @@ class DashboardViewModel(
         runCatching { repo.clone(p) }
             .onSuccess { _messages.emit("Proyek diduplikasi: ${it.appName}") }
             .onFailure { _messages.emit("Gagal duplikasi: ${it.message}") }
+    }
+
+    /** A3: ekspor .webify → callback dengan file untuk dibagikan. */
+    fun export(p: WebProjectEntity, onReady: (java.io.File) -> Unit) = viewModelScope.launch {
+        runCatching { archive.export(p) }
+            .onSuccess(onReady)
+            .onFailure { _messages.emit("Ekspor gagal: ${it.message}") }
+    }
+
+    /** A3: impor .webify sebagai proyek baru. */
+    fun importBundle(uri: Uri, onImported: (String) -> Unit) = viewModelScope.launch {
+        runCatching { archive.importBundle(uri) }
+            .onSuccess { _messages.emit("Proyek diimpor: ${it.appName}"); onImported(it.id) }
+            .onFailure { _messages.emit("Impor gagal: ${it.message}") }
     }
 
     fun delete(p: WebProjectEntity) = viewModelScope.launch {
@@ -120,9 +146,10 @@ data class StudioErrors(
     val packageName: String? = null,
     val url: String? = null,
     val versionName: String? = null,
-    val colors: Map<String, String> = emptyMap()
+    val colors: Map<String, String> = emptyMap(),
+    val sdk: String? = null
 ) {
-    val hasErrors get() = packageName != null || url != null || versionName != null || colors.isNotEmpty()
+    val hasErrors get() = packageName != null || url != null || versionName != null || colors.isNotEmpty() || sdk != null
 }
 
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -206,7 +233,12 @@ class StudioViewModel(
             url = if (p.sourceType == SourceType.URL) Validators.urlError(p.targetUrl) else
                 if (p.localZipPath == null) "Pilih file ZIP proyek web" else null,
             versionName = if (p.versionName.isBlank()) "Wajib diisi" else null,
-            colors = colorFields
+            colors = colorFields,
+            sdk = when {
+                p.admobEnabled && !p.admobAppId.trim().matches(Regex("^ca-app-pub-\\d+~\\d+$")) -> "AdMob App ID tidak valid"
+                p.fcmEnabled && p.googleServicesJsonPath == null -> "google-services.json belum diunggah"
+                else -> null
+            }
         )
     }
 
@@ -220,6 +252,80 @@ class StudioViewModel(
         runCatching { repo.importSiteZip(projectId, uri) }
             .onSuccess { path -> update { it.copy(localZipPath = path, sourceType = SourceType.LOCAL_HTML_ZIP) }; _messages.emit("ZIP proyek web diimpor") }
             .onFailure { _messages.emit("ZIP tidak valid: ${it.message}") }
+    }
+
+    // ------------------------------------------------------------------ A1: auto-fill dari URL
+    private val _autofilling = MutableStateFlow(false)
+    val autofilling: StateFlow<Boolean> = _autofilling.asStateFlow()
+
+    fun autofill(canChangePackage: Boolean) = viewModelScope.launch {
+        val p = _draft.value ?: return@launch
+        val url = p.targetUrl.trim()
+        Validators.urlError(url)?.let { _messages.emit(it); return@launch }
+        _autofilling.value = true
+        try {
+            val iconFile = repo.projectAssetFile(projectId, "icon_auto_${System.currentTimeMillis()}")
+            val meta = WebsiteMetadataExtractor().extract(url, iconFile)
+            val filled = mutableListOf<String>()
+            update { cur ->
+                var n = cur
+                meta.displayName?.let { n = n.copy(appName = it); filled += "nama" }
+                meta.themeColor?.let { n = n.copy(primaryColorHex = it, statusBarColorHex = it, progressBarColorHex = it); filled += "warna tema" }
+                (meta.backgroundColor ?: meta.themeColor)?.let { n = n.copy(splashBgColorHex = it) }
+                meta.backgroundColor?.let { n = n.copy(adaptiveBgColor = it) }
+                meta.iconFile?.let { n = n.copy(iconUri = it.absolutePath); filled += "ikon" }
+                if (canChangePackage && meta.displayName != null) {
+                    val suggestion = WebsiteMetadataExtractor.suggestPackage(meta.displayName!!)
+                    if (Validators.packageNameError(suggestion) == null) { n = n.copy(packageName = suggestion); filled += "package" }
+                }
+                n
+            }
+            _messages.emit(
+                if (filled.isEmpty()) "Tidak ada metadata yang bisa diambil dari website"
+                else "Terisi otomatis: ${filled.joinToString()}" + if (meta.manifestFound) " (dari manifest PWA)" else ""
+            )
+        } catch (e: Exception) {
+            _messages.emit("Gagal mengambil info website: ${e.message}")
+        } finally {
+            _autofilling.value = false
+        }
+    }
+
+    // ------------------------------------------------------------------ Plugin SDK
+    fun setGoogleServices(uri: Uri) = viewModelScope.launch {
+        val p = _draft.value ?: return@launch
+        try {
+            val f = repo.importAsset(projectId, uri, "google-services.json")
+            val cfg = GoogleServicesParser.parse(f.readText(), p.packageName)
+            update { it.copy(googleServicesJsonPath = f.absolutePath, fcmEnabled = true) }
+            _messages.emit("google-services.json valid • project ${cfg.projectId}")
+        } catch (e: Exception) {
+            _messages.emit("google-services.json ditolak: ${e.message}")
+        }
+    }
+
+    fun addLocalLibrary(uri: Uri) = viewModelScope.launch {
+        val name = repo.displayName(uri) ?: "library_${System.currentTimeMillis()}.aar"
+        if (!name.endsWith(".aar", true) && !name.endsWith(".jar", true)) {
+            _messages.emit("Hanya file .aar atau .jar yang didukung")
+            return@launch
+        }
+        try {
+            val f = repo.importAsset(projectId, uri, "lib_" + name)
+            java.util.zip.ZipFile(f).close() // validasi arsip
+            update { cur ->
+                val list = cur.localLibraries.lines().filter { it.isNotBlank() && it != f.absolutePath } + f.absolutePath
+                cur.copy(localLibraries = list.joinToString("\n"))
+            }
+            _messages.emit("Library ditambahkan: $name")
+        } catch (e: Exception) {
+            _messages.emit("File library tidak valid: ${e.message}")
+        }
+    }
+
+    fun removeLocalLibrary(path: String) {
+        update { cur -> cur.copy(localLibraries = cur.localLibraries.lines().filter { it.isNotBlank() && it != path }.joinToString("\n")) }
+        runCatching { java.io.File(path).delete() }
     }
 
     /** Simpan lalu mulai build. @return true bila build dimulai. */

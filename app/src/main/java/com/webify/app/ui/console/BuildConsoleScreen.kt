@@ -187,7 +187,7 @@ private fun ProgressHeader(s: BuildSession) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
                 when {
-                    s.running -> s.activeStage?.let { "Tahap ${it.ordinal + 1}/7 • ${it.label}" } ?: "Menyiapkan…"
+                    s.running -> s.activeStage?.let { "Tahap ${it.ordinal + 1}/${BuildStage.entries.size} • ${it.label}" } ?: "Menyiapkan…"
                     failed -> "Build gagal"
                     s.result is BuildResult.Success -> "Build berhasil"
                     else -> "Dihentikan"

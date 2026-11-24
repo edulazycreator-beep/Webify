@@ -54,6 +54,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.NavHostController
 import androidx.navigation.NavType
@@ -66,6 +67,7 @@ import com.webify.app.AppContainer
 import com.webify.app.ui.console.BuildConsoleScreen
 import com.webify.app.ui.copilot.CopilotScreen
 import com.webify.app.ui.dashboard.DashboardScreen
+import com.webify.app.ui.assets.AssetGeneratorScreen
 import com.webify.app.ui.preview.PreviewScreen
 import com.webify.app.ui.studio.StudioPickerScreen
 import com.webify.app.ui.studio.StudioScreen
@@ -79,6 +81,8 @@ object Routes {
     const val COPILOT = "copilot"
     const val CONSOLE = "console"
     const val PREVIEW = "preview/{projectId}"
+    const val ASSETS = "assets/{projectId}"
+    fun assets(id: String) = "assets/$id"
     fun preview(id: String) = "preview/$id"
     fun studio(id: String) = "studio/$id"
 }
@@ -100,7 +104,14 @@ fun WebifyRoot(container: AppContainer) {
     val route = backStack?.destination?.route
     var lastProjectId by rememberSaveable { mutableStateOf<String?>(null) }
     val wide = LocalConfiguration.current.screenWidthDp >= 600
-    val showNav = route != Routes.CONSOLE && route != Routes.PREVIEW
+    val navRequest by container.navRequests.collectAsStateWithLifecycle()
+    LaunchedEffect(navRequest) {
+        when (navRequest) {
+            com.webify.app.MainActivity.OPEN_CONSOLE -> nav.navigate(Routes.CONSOLE) { launchSingleTop = true }
+        }
+        if (navRequest != null) container.navRequests.value = null
+    }
+    val showNav = route != Routes.CONSOLE && route != Routes.PREVIEW && route != Routes.ASSETS
 
     fun selected(dest: TopDest) = when (dest.route) {
         Routes.STUDIO -> route == Routes.STUDIO || route == Routes.STUDIO_PROJECT
@@ -186,6 +197,7 @@ private fun WebifyNavGraph(
         nav.navigate(Routes.studio(id)) { launchSingleTop = true }
     }
     val openConsole: () -> Unit = { nav.navigate(Routes.CONSOLE) { launchSingleTop = true } }
+    val openAssets: (String) -> Unit = { id -> nav.navigate(Routes.assets(id)) { launchSingleTop = true } }
     val openCopilot: () -> Unit = {
         nav.navigate(Routes.COPILOT) {
             popUpTo(nav.graph.findStartDestination().id) { saveState = false }
@@ -203,7 +215,7 @@ private fun WebifyNavGraph(
         popExitTransition = { fadeOut(tween(160)) + slideOutOfContainer(AnimatedContentTransitionScope.SlideDirection.End, tween(260), targetOffset = { it / 12 }) }
     ) {
         composable(Routes.PROJECTS) {
-            DashboardScreen(container = container, onOpenProject = openStudio, onOpenConsole = openConsole)
+            DashboardScreen(container = container, onOpenProject = openStudio, onOpenConsole = openConsole, onOpenAssets = openAssets)
         }
         composable(Routes.STUDIO) {
             StudioPickerScreen(container = container, onOpenProject = openStudio)
@@ -231,7 +243,14 @@ private fun WebifyNavGraph(
             PreviewScreen(projectId = id, container = container, onBack = { nav.popBackStack() })
         }
         composable(Routes.KEYSTORES) { KeystoreVaultScreen(container = container) }
-        composable(Routes.COPILOT) { CopilotScreen(container = container) }
+        composable(Routes.COPILOT) { CopilotScreen(container = container, onOpenAssets = openAssets) }
+        composable(
+            Routes.ASSETS,
+            arguments = listOf(navArgument("projectId") { type = NavType.StringType })
+        ) { entry ->
+            val id = entry.arguments?.getString("projectId") ?: return@composable
+            AssetGeneratorScreen(projectId = id, container = container, onBack = { nav.popBackStack() })
+        }
         composable(Routes.CONSOLE) {
             BuildConsoleScreen(
                 container = container,

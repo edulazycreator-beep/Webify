@@ -2,6 +2,7 @@ package com.webify.app.build
 
 import com.webify.app.data.db.WebProjectEntity
 import com.webify.app.build.ResourceGenerator.Companion.xmlAttr
+import com.webify.app.domain.NativeConfigCodec
 
 /** Tahap 2: Menghasilkan AndroidManifest.xml aplikasi output secara dinamis. */
 object ManifestGenerator {
@@ -18,7 +19,12 @@ object ManifestGenerator {
             perms += "android.permission.ACCESS_FINE_LOCATION"
             perms += "android.permission.ACCESS_COARSE_LOCATION"
         }
-        if (p.permNotifications) perms += "android.permission.POST_NOTIFICATIONS"
+        if (p.permNotifications || p.fcmEnabled) perms += "android.permission.POST_NOTIFICATIONS"
+        if (p.permCamera || p.qrScannerEnabled) perms += "android.permission.CAMERA"
+        if (p.enableBiometricLock) {
+            perms += "android.permission.USE_BIOMETRIC"
+            perms += "android.permission.USE_FINGERPRINT"
+        }
         perms += "android.permission.VIBRATE"
         if (p.permStorageDownloads || p.enableDownloadManager) {
             extraPermLines += """<uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="28"/>"""
@@ -42,6 +48,7 @@ object ManifestGenerator {
             </intent-filter>""" else ""
 
         val orientation = p.screenOrientation.manifestValue
+        val hasShortcuts = NativeConfigCodec.shortcuts(p.shortcutsJson).any { it.shortLabel.isNotBlank() && it.targetUrl.isNotBlank() }
         val pkg = p.packageName
 
         val manifest = buildString {
@@ -80,7 +87,26 @@ object ManifestGenerator {
             appendLine("""                <category android:name="android.intent.category.LAUNCHER"/>""")
             appendLine("""            </intent-filter>""")
             if (deepLinkFilter.isNotEmpty()) appendLine(deepLinkFilter.trimEnd())
+            if (hasShortcuts) appendLine("""            <meta-data android:name="android.app.shortcuts" android:resource="@xml/shortcuts"/>""")
             appendLine("""        </activity>""")
+            appendLine()
+            appendLine("""        <receiver android:name=".WebifyNotificationReceiver" android:exported="false"/>""")
+            if (p.qrScannerEnabled) {
+                appendLine("""        <activity android:name=".WebifyQrScannerActivity" android:exported="false"""")
+                appendLine("""            android:screenOrientation="portrait" android:theme="@android:style/Theme.Material.NoActionBar.Fullscreen"/>""")
+            }
+            if (p.fcmEnabled) {
+                appendLine("""        <service android:name=".WebifyFirebaseMessagingService" android:exported="false">""")
+                appendLine("""            <intent-filter>""")
+                appendLine("""                <action android:name="com.google.firebase.MESSAGING_EVENT"/>""")
+                appendLine("""            </intent-filter>""")
+                appendLine("""        </service>""")
+                appendLine("""        <meta-data android:name="com.google.firebase.messaging.default_notification_channel_id" android:value="webify_push"/>""")
+                appendLine("""        <meta-data android:name="com.google.firebase.messaging.default_notification_icon" android:resource="@drawable/wf_ic_notifications"/>""")
+            }
+            if (p.admobEnabled) {
+                appendLine("""        <meta-data android:name="com.google.android.gms.ads.APPLICATION_ID" android:value="${xmlAttr(p.admobAppId.trim())}"/>""")
+            }
             appendLine()
             appendLine("""        <provider""")
             appendLine("""            android:name=".WebifyFileProvider"""")

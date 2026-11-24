@@ -7,13 +7,14 @@ import java.util.Date
 import java.util.Locale
 
 enum class BuildStage(val label: String, val weight: Int) {
-    RESOURCES("Resources", 10),
-    MANIFEST("Manifest", 5),
-    AAPT2("AAPT2", 20),
-    JAVA_GEN("Java Gen", 5),
-    ECJ("ECJ", 25),
-    D8("D8 DEX", 20),
-    PACKAGE("Package & Sign", 15);
+    RESOURCES("Resources", 8),
+    MANIFEST("Manifest", 4),
+    DEPENDENCIES("SDK & AAR", 10),
+    AAPT2("AAPT2", 16),
+    JAVA_GEN("Java Gen", 4),
+    ECJ("ECJ", 22),
+    D8("D8 DEX", 22),
+    PACKAGE("Package & Sign", 14);
 
     /** Persentase kumulatif saat tahap ini dimulai. */
     val startPercent: Int get() = entries.takeWhile { it != this }.sumOf { it.weight }
@@ -94,6 +95,8 @@ class Workspace(val root: File) {
     val bundleStaging = File(root, "bundle_staging")
     val output = File(root, "output")
     val manifest = File(root, "AndroidManifest.xml")
+    val nativeLibs = File(root, "native_libs")
+    val javaResources = File(root, "java_res")
 
     val compiledResZip = File(compiledRes, "resources.zip")
     val resourcesAp = File(output, "resources.ap_")
@@ -104,7 +107,8 @@ class Workspace(val root: File) {
         listOf(
             "res/values", "res/xml", "res/drawable",
             "res/mipmap-mdpi", "res/mipmap-hdpi", "res/mipmap-xhdpi", "res/mipmap-xxhdpi", "res/mipmap-xxxhdpi",
-            "res/mipmap-anydpi-v26", "src", "assets", "compiled_res", "classes", "dex", "bundle_staging", "output"
+            "res/mipmap-anydpi-v26", "src", "assets", "compiled_res", "classes", "dex", "bundle_staging", "output",
+            "native_libs", "java_res"
         ).forEach { File(root, it).mkdirs() }
     }
 }

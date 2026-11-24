@@ -1,6 +1,22 @@
 package com.webify.app.ui.studio
 
 import android.net.Uri
+import com.webify.app.build.PluginCatalog
+import com.webify.app.domain.NativeConfigCodec
+import com.webify.app.domain.AppShortcutItem
+import com.webify.app.domain.NavMenuItem
+import com.webify.app.domain.NavStyle
+import com.webify.app.domain.NavIcon
+import androidx.compose.material.icons.automirrored.rounded.List
+import androidx.compose.material.icons.rounded.Menu
+import androidx.compose.material.icons.rounded.Receipt
+import androidx.compose.material.icons.rounded.ChatBubble
+import androidx.compose.material.icons.rounded.Favorite
+import androidx.compose.material.icons.rounded.Search
+import androidx.compose.material.icons.rounded.Person
+import androidx.compose.material.icons.rounded.ShoppingCart
+import androidx.compose.material.icons.rounded.Dashboard
+import androidx.compose.material.icons.rounded.Home
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
@@ -49,6 +65,20 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.automirrored.rounded.ExitToApp
 import androidx.compose.material.icons.rounded.Android
+import androidx.compose.material.icons.rounded.ArrowDropDown
+import androidx.compose.material.icons.rounded.Inventory2
+import androidx.compose.material.icons.rounded.UploadFile
+import androidx.compose.material.icons.rounded.NotificationsActive
+import androidx.compose.material.icons.rounded.Campaign
+import androidx.compose.material.icons.rounded.QrCodeScanner
+import androidx.compose.material.icons.rounded.Description
+import androidx.compose.material.icons.rounded.Delete
+import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.Numbers
+import androidx.compose.material.icons.rounded.Fingerprint
+import androidx.compose.material.icons.rounded.Info
+import androidx.compose.material.icons.rounded.Star
+import androidx.compose.material.icons.rounded.Extension
 import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.Badge
 import androidx.compose.material.icons.rounded.Block
@@ -202,6 +232,7 @@ private val TABS = listOf(
     StudioTab("Tampilan & tema", "Tampilan", Icons.Rounded.Palette),
     StudioTab("WebView & offline", "WebView", Icons.Rounded.Language),
     StudioTab("Izin & injeksi kode", "Izin & Kode", Icons.Rounded.Code),
+    StudioTab("SDK & integrasi", "SDK", Icons.Rounded.Extension),
     StudioTab("Build & signing", "Build", Icons.Rounded.RocketLaunch)
 )
 
@@ -227,6 +258,7 @@ fun StudioScreen(
     val saving by vm.saving.collectAsStateWithLifecycle()
     val keystores by vm.keystores.collectAsStateWithLifecycle()
     val builds by vm.builds.collectAsStateWithLifecycle()
+    val autofilling by vm.autofilling.collectAsStateWithLifecycle()
     val snackbar = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
 
@@ -318,14 +350,15 @@ fun StudioScreen(
                     verticalArrangement = Arrangement.spacedBy(Dimens.SectionGap)
                 ) {
                     when (page) {
-                        0 -> IdentityPage(p, errors, update, vm)
+                        0 -> IdentityPage(p, errors, update, vm, autofilling, canChangePackage = builds.isEmpty())
                         1 -> AppearancePage(p, errors, update)
                         2 -> WebViewPage(p, update)
                         3 -> PermissionsCodePage(p, update, onAskAi = { instruction ->
                             container.copilotBus.post(CopilotRequest(p.id, PromptBuilder.cssJsInjector(instruction), "🎨 $instruction"))
                             onOpenCopilot()
                         })
-                        4 -> BuildPage(p, keystores, builds, errors, target, onTarget = { target = it }, update = update,
+                        4 -> SdkPage(p, update, vm)
+                        5 -> BuildPage(p, keystores, builds, errors, target, onTarget = { target = it }, update = update,
                             onQuickBuild = { vm.startBuild(BuildType.APK_DEBUG, onOpenConsole) })
                     }
                     Spacer(Modifier.height(16.dp))
@@ -433,6 +466,7 @@ private fun PillTabRow(pagePosition: Float, selected: Int, errorTabs: Set<Int>, 
 private fun errorTabs(e: StudioErrors): Set<Int> = buildSet {
     if (e.packageName != null || e.url != null || e.versionName != null || "adaptiveBgColor" in e.colors) add(0)
     if (e.colors.keys.any { it != "adaptiveBgColor" }) add(1)
+    if (e.sdk != null) add(4)
 }
 
 @Composable
@@ -629,7 +663,7 @@ private fun ExpandableCodeCard(
 // =============================================================================
 
 @Composable
-private fun IdentityPage(p: WebProjectEntity, e: StudioErrors, update: Updater, vm: StudioViewModel) {
+private fun IdentityPage(p: WebProjectEntity, e: StudioErrors, update: Updater, vm: StudioViewModel, autofilling: Boolean, canChangePackage: Boolean) {
     val iconPicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri: Uri? -> uri?.let(vm::setIcon) }
     val zipPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? -> uri?.let(vm::setSiteZip) }
 
@@ -669,6 +703,17 @@ private fun IdentityPage(p: WebProjectEntity, e: StudioErrors, update: Updater, 
         }
         if (p.sourceType == SourceType.URL) {
             LabeledField("URL target", p.targetUrl, { v -> update { it.copy(targetUrl = v.trim()) } }, error = e.url, mono = true, keyboardType = KeyboardType.Uri)
+            SecondaryButton(
+                if (autofilling) "Mengambil info website…" else "Ambil Info Website Otomatis",
+                onClick = { vm.autofill(canChangePackage) },
+                icon = Icons.Rounded.AutoAwesome, tonal = true, enabled = !autofilling && e.url == null,
+                modifier = Modifier.fillMaxWidth()
+            )
+            Text(
+                "Mengisi nama, warna tema, latar splash, dan ikon dari manifest PWA / meta tag" +
+                    if (canChangePackage) ", serta saran package name." else ".",
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
         } else {
             SecondaryButton(
                 if (p.localZipPath == null) "Pilih ZIP (berisi index.html)" else "Ganti ZIP proyek web",
@@ -767,6 +812,17 @@ private fun AppearancePage(p: WebProjectEntity, e: StudioErrors, update: Updater
         SwitchRow("Layar penuh (Immersive)", p.fullscreenMode, { v -> update { it.copy(fullscreenMode = v) } }, "Sembunyikan status & navigation bar", Icons.Rounded.Wallpaper)
     }
 
+    NavMenuEditor(p, update)
+    ShortcutsEditor(p, update)
+    AccordionCard("Tentang & Rating", Icons.Rounded.Star, "Dialog native versi, kebijakan privasi, rating Play Store",
+        badge = if (p.enableAboutDialog) "aktif" else null) {
+        SwitchRow("Aktifkan dialog Tentang & Beri Rating", p.enableAboutDialog, { v -> update { it.copy(enableAboutDialog = v) } },
+            "Tampil di drawer; juga via WebifyBridge.openAboutDialog() / rateApp()", Icons.Rounded.Info)
+        LabeledField("URL Kebijakan Privasi", p.privacyPolicyUrl, { v -> update { it.copy(privacyPolicyUrl = v.trim()) } }, mono = true,
+            keyboardType = KeyboardType.Uri, placeholder = "https://toko.com/privacy",
+            supporting = "Buat teksnya dengan AI Co-Pilot → \"Buat Privacy Policy\", lalu unggah ke website Anda")
+    }
+
     SectionCard("Splash Screen", Icons.Rounded.RocketLaunch, "Layar pembuka saat aplikasi dimulai") {
         SwitchRow("Aktifkan splash", p.enableSplash, { v -> update { it.copy(enableSplash = v) } })
         AnimatedVisibility(visible = p.enableSplash, enter = expandVertically() + fadeIn(), exit = shrinkVertically() + fadeOut()) {
@@ -823,8 +879,10 @@ private fun WebViewPage(p: WebProjectEntity, update: Updater) {
         SwitchRow("Putar media otomatis", p.autoplayMedia, { v -> update { it.copy(autoplayMedia = v) } }, icon = Icons.Rounded.PlayCircle)
     }
 
-    val privacyOn = listOf(p.adBlockEnabled, p.preventScreenshots, p.clearCacheOnStart, !p.allowThirdPartyCookies).count { it }
+    val privacyOn = listOf(p.adBlockEnabled, p.preventScreenshots, p.clearCacheOnStart, !p.allowThirdPartyCookies, p.enableBiometricLock).count { it }
     AccordionCard("Privasi & Keamanan", Icons.Rounded.Shield, "Iklan, cookie, screenshot", badge = privacyOn.takeIf { it > 0 }?.let { "$it aktif" }) {
+        SwitchRow("Kunci biometrik", p.enableBiometricLock, { v -> update { it.copy(enableBiometricLock = v) } },
+            "Sidik jari / wajah / PIN saat aplikasi dibuka", Icons.Rounded.Fingerprint)
         SwitchRow("Blokir iklan & pelacak", p.adBlockEnabled, { v -> update { it.copy(adBlockEnabled = v) } }, "±40 jaringan iklan/analitik", Icons.Rounded.Block)
         SwitchRow("Cookie pihak ketiga", p.allowThirdPartyCookies, { v -> update { it.copy(allowThirdPartyCookies = v) } }, "Untuk login Google/Facebook tertanam", Icons.Rounded.Cookie)
         SwitchRow("Safe Browsing", p.safeBrowsing, { v -> update { it.copy(safeBrowsing = v) } }, icon = Icons.Rounded.VerifiedUser)
@@ -1030,6 +1088,13 @@ private fun BuildPage(
         }
     }
 
+    SectionCard("Versi Otomatis", Icons.Rounded.Numbers, "versionCode ${p.versionCode} • versionName ${p.versionName}") {
+        SwitchRow(
+            "Auto-increment versionCode", p.autoIncrementVersionCode, { v -> update { it.copy(autoIncrementVersionCode = v) } },
+            "Setelah Release APK / AAB sukses: versionCode +1 & patch versionName naik (1.0.0 → 1.0.1)", Icons.Rounded.Refresh
+        )
+    }
+
     SecondaryButton("Quick Build & Test (Debug Key)", onClick = onQuickBuild, icon = Icons.Rounded.Bolt, modifier = Modifier.fillMaxWidth(), enabled = !errors.hasErrors)
 
     SectionCard("Riwayat Build", Icons.Rounded.History) {
@@ -1137,6 +1202,224 @@ private fun BuildRecordRow(b: BuildRecordEntity, onInstall: () -> Unit, onShare:
             IconButton(onClick = onShare, modifier = Modifier.size(Dimens.IconButtonSmall)) { Icon(Icons.Rounded.Share, "Bagikan", Modifier.size(Dimens.IconInline)) }
             IconButton(onClick = onExport, modifier = Modifier.size(Dimens.IconButtonSmall)) { Icon(Icons.Rounded.Download, "Ekspor", Modifier.size(Dimens.IconInline)) }
         }
+    }
+}
+
+// =============================================================================
+// Editor menu navigasi native & App Shortcuts (B1 / B3)
+// =============================================================================
+
+@Composable
+private fun NavIconPicker(selected: String, onSelect: (String) -> Unit) {
+    var open by remember { mutableStateOf(false) }
+    val icon = NavIcon.of(selected)
+    Box {
+        Surface(
+            onClick = { open = true },
+            shape = RoundedCornerShape(Dimens.RadiusControl),
+            color = MaterialTheme.colorScheme.primaryContainer,
+            modifier = Modifier.size(56.dp)
+        ) {
+            Box(contentAlignment = Alignment.Center) {
+                Icon(navIconVector(icon), icon.label, Modifier.size(Dimens.IconBar), tint = MaterialTheme.colorScheme.onPrimaryContainer)
+            }
+        }
+        androidx.compose.material3.DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+            NavIcon.entries.forEach { ni ->
+                androidx.compose.material3.DropdownMenuItem(
+                    text = { Text(ni.label) },
+                    leadingIcon = { Icon(navIconVector(ni), null, Modifier.size(Dimens.IconInline)) },
+                    onClick = { onSelect(ni.key); open = false }
+                )
+            }
+        }
+    }
+}
+
+/** Padanan ikon Compose untuk pratinjau ikon vektor yang ditulis ke aplikasi output. */
+private fun navIconVector(i: NavIcon): ImageVector = when (i) {
+    NavIcon.HOME -> Icons.Rounded.Home
+    NavIcon.CATEGORY -> Icons.Rounded.Dashboard
+    NavIcon.CART -> Icons.Rounded.ShoppingCart
+    NavIcon.ACCOUNT -> Icons.Rounded.Person
+    NavIcon.SEARCH -> Icons.Rounded.Search
+    NavIcon.FAVORITE -> Icons.Rounded.Favorite
+    NavIcon.NOTIFICATIONS -> Icons.Rounded.Notifications
+    NavIcon.CHAT -> Icons.Rounded.ChatBubble
+    NavIcon.STAR -> Icons.Rounded.Star
+    NavIcon.INFO -> Icons.Rounded.Info
+    NavIcon.LIST -> Icons.AutoMirrored.Rounded.List
+    NavIcon.RECEIPT -> Icons.Rounded.Receipt
+}
+
+@Composable
+private fun NavMenuEditor(p: WebProjectEntity, update: Updater) {
+    val items = remember(p.navItemsJson) { NativeConfigCodec.navItems(p.navItemsJson) }
+    fun save(list: List<NavMenuItem>) = update { it.copy(navItemsJson = NativeConfigCodec.encodeNav(list)) }
+    AccordionCard(
+        "Menu Navigasi Native", Icons.Rounded.Menu, p.navStyle.label,
+        badge = if (p.navStyle != NavStyle.NONE && items.isNotEmpty()) "${items.size} item" else null
+    ) {
+        Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            NavStyle.entries.forEach { st ->
+                FilterChip(selected = p.navStyle == st, onClick = { update { it.copy(navStyle = st) } }, label = { Text(st.label, maxLines = 1) })
+            }
+        }
+        if (p.navStyle != NavStyle.NONE) {
+            items.forEachIndexed { i, item ->
+                Row(verticalAlignment = Alignment.Top, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    NavIconPicker(item.icon) { key -> save(items.toMutableList().also { it[i] = item.copy(icon = key) }) }
+                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        LabeledField("Label", item.label, { v -> save(items.toMutableList().also { it[i] = item.copy(label = v.take(16)) }) })
+                        LabeledField("URL / path", item.targetUrl, { v -> save(items.toMutableList().also { it[i] = item.copy(targetUrl = v.trim()) }) },
+                            mono = true, keyboardType = KeyboardType.Uri, placeholder = "/kategori")
+                    }
+                    IconButton(onClick = { save(items.toMutableList().also { it.removeAt(i) }) }, modifier = Modifier.size(40.dp)) {
+                        Icon(Icons.Rounded.Delete, "Hapus item", Modifier.size(Dimens.IconInline), tint = MaterialTheme.colorScheme.error)
+                    }
+                }
+                if (i < items.lastIndex) HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+            }
+            if (items.size < 5) {
+                SecondaryButton("Tambah item menu (${items.size}/5)", onClick = {
+                    val defaults = listOf(NavIcon.HOME, NavIcon.CATEGORY, NavIcon.CART, NavIcon.ACCOUNT, NavIcon.INFO)
+                    val ic = defaults[items.size.coerceAtMost(4)]
+                    save(items + NavMenuItem(ic.label, "/", ic.key))
+                }, icon = Icons.Rounded.Add, modifier = Modifier.fillMaxWidth())
+            }
+            Text(
+                "Path relatif (mis. /cart) otomatis digabung dengan URL website. Tab aktif mengikuti halaman yang sedang dibuka.",
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+    }
+}
+
+@Composable
+private fun ShortcutsEditor(p: WebProjectEntity, update: Updater) {
+    val items = remember(p.shortcutsJson) { NativeConfigCodec.shortcuts(p.shortcutsJson) }
+    fun save(list: List<AppShortcutItem>) = update { it.copy(shortcutsJson = NativeConfigCodec.encodeShortcuts(list)) }
+    AccordionCard("App Shortcuts", Icons.Rounded.TouchApp, "Tekan lama ikon launcher → lompat ke halaman",
+        badge = items.size.takeIf { it > 0 }?.let { "$it/4" }) {
+        items.forEachIndexed { i, sc ->
+            Row(verticalAlignment = Alignment.Top, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                NavIconPicker(sc.icon) { key -> save(items.toMutableList().also { it[i] = sc.copy(icon = key) }) }
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    LabeledField("Label singkat", sc.shortLabel, { v -> save(items.toMutableList().also { it[i] = sc.copy(shortLabel = v.take(25)) }) },
+                        supporting = "${sc.shortLabel.length}/25")
+                    LabeledField("Label panjang", sc.longLabel, { v -> save(items.toMutableList().also { it[i] = sc.copy(longLabel = v.take(50)) }) })
+                    LabeledField("URL / path", sc.targetUrl, { v -> save(items.toMutableList().also { it[i] = sc.copy(targetUrl = v.trim()) }) },
+                        mono = true, keyboardType = KeyboardType.Uri, placeholder = "/akun/pesanan")
+                }
+                IconButton(onClick = { save(items.toMutableList().also { it.removeAt(i) }) }, modifier = Modifier.size(40.dp)) {
+                    Icon(Icons.Rounded.Delete, "Hapus shortcut", Modifier.size(Dimens.IconInline), tint = MaterialTheme.colorScheme.error)
+                }
+            }
+            if (i < items.lastIndex) HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+        }
+        if (items.size < 4) {
+            SecondaryButton("Tambah shortcut (${items.size}/4)", onClick = {
+                save(items + AppShortcutItem("Promo", "Promo hari ini", "/promo", NavIcon.STAR.key))
+            }, icon = Icons.Rounded.Add, modifier = Modifier.fillMaxWidth())
+        }
+    }
+}
+
+// =============================================================================
+// 5. SDK & Integrasi (jalur AAR)
+// =============================================================================
+
+@Composable
+private fun SdkPage(p: WebProjectEntity, update: Updater, vm: StudioViewModel) {
+    val gsPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? -> uri?.let(vm::setGoogleServices) }
+    val libPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? -> uri?.let(vm::addLocalLibrary) }
+
+    Surface(color = MaterialTheme.colorScheme.secondaryContainer, shape = RoundedCornerShape(Dimens.RadiusControl), modifier = Modifier.fillMaxWidth()) {
+        Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+            Icon(Icons.Rounded.Info, null, Modifier.size(Dimens.IconInline), tint = MaterialTheme.colorScheme.onSecondaryContainer)
+            Spacer(Modifier.width(Dimens.IconTextGap))
+            Text(
+                "Plugin di bawah memakai library eksternal (AAR) yang diunduh dari Google Maven/Maven Central saat build pertama " +
+                    "(butuh internet sekali, lalu di-cache). Build menjadi lebih lama & APK lebih besar.",
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSecondaryContainer, modifier = Modifier.weight(1f)
+            )
+        }
+    }
+
+    // FCM
+    AccordionCard("Push Notification (FCM)", Icons.Rounded.NotificationsActive, "Firebase Cloud Messaging",
+        badge = if (p.fcmEnabled) "aktif" else null, initiallyExpanded = p.fcmEnabled) {
+        SwitchRow("Aktifkan FCM", p.fcmEnabled, { v -> update { it.copy(fcmEnabled = v && it.googleServicesJsonPath != null) } },
+            if (p.googleServicesJsonPath == null) "Unggah google-services.json terlebih dahulu" else PluginCatalog.FCM)
+        SecondaryButton(
+            if (p.googleServicesJsonPath == null) "Unggah google-services.json" else "Ganti google-services.json",
+            onClick = { gsPicker.launch(arrayOf("application/json", "text/plain", "*/*")) },
+            icon = Icons.Rounded.UploadFile, modifier = Modifier.fillMaxWidth()
+        )
+        if (p.googleServicesJsonPath != null) {
+            Text("✓ ${File(p.googleServicesJsonPath).name}", style = WebifyTheme.mono.copy(fontSize = 12.sp, lineHeight = 16.sp))
+        }
+        Text(
+            "Daftarkan package ${p.packageName} di Firebase Console. Token dikirim ke website via window.onFcmTokenReceived(token) " +
+                "atau WebifyBridge.getFcmToken('callback').",
+            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+    }
+
+    // AdMob
+    AccordionCard("Iklan (Google AdMob)", Icons.Rounded.Campaign, "Banner native + interstitial",
+        badge = if (p.admobEnabled) "aktif" else null, initiallyExpanded = p.admobEnabled) {
+        SwitchRow("Aktifkan AdMob", p.admobEnabled, { v -> update { it.copy(admobEnabled = v) } }, PluginCatalog.ADMOB)
+        LabeledField("AdMob App ID", p.admobAppId, { v -> update { it.copy(admobAppId = v.trim()) } }, mono = true,
+            placeholder = "ca-app-pub-XXXXXXXX~YYYYYYYY",
+            error = if (p.admobEnabled && !p.admobAppId.matches(Regex("^ca-app-pub-\\d+~\\d+$"))) "Format: ca-app-pub-…~…" else null)
+        LabeledField("Banner Ad Unit ID", p.admobBannerId, { v -> update { it.copy(admobBannerId = v.trim()) } }, mono = true,
+            placeholder = "ca-app-pub-XXXXXXXX/ZZZZZZZZ", supporting = "Kosong = tanpa banner")
+        LabeledField("Interstitial Ad Unit ID", p.admobInterstitialId, { v -> update { it.copy(admobInterstitialId = v.trim()) } }, mono = true,
+            placeholder = "ca-app-pub-XXXXXXXX/WWWWWWWW", supporting = "Panggil dari web: WebifyBridge.showInterstitialAd()")
+        SecondaryButton("Isi ID uji resmi Google", onClick = {
+            update {
+                it.copy(
+                    admobAppId = "ca-app-pub-3940256099942544~3347511713",
+                    admobBannerId = "ca-app-pub-3940256099942544/6300978111",
+                    admobInterstitialId = "ca-app-pub-3940256099942544/1033173712"
+                )
+            }
+        }, icon = Icons.Rounded.Bolt, modifier = Modifier.fillMaxWidth())
+    }
+
+    // QR
+    AccordionCard("QR & Barcode Scanner", Icons.Rounded.QrCodeScanner, "ZXing core + kamera native",
+        badge = if (p.qrScannerEnabled) "aktif" else null) {
+        SwitchRow("Aktifkan pemindai", p.qrScannerEnabled, { v -> update { it.copy(qrScannerEnabled = v, permCamera = it.permCamera || v) } },
+            "Izin kamera ikut diaktifkan • ${PluginCatalog.ZXING}")
+        Text(
+            "Dari website: WebifyBridge.scanQrCode('onScan') → function onScan(text) { … } (null jika dibatalkan).",
+            style = WebifyTheme.mono.copy(fontSize = 12.sp, lineHeight = 16.sp), color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+    }
+
+    // Lanjutan
+    val libs = p.localLibraries.lines().filter { it.isNotBlank() }
+    AccordionCard("Dependensi Lanjutan", Icons.Rounded.Inventory2, "Maven & library .aar/.jar lokal",
+        badge = (p.extraDependencies.lines().count { it.isNotBlank() } + libs.size).takeIf { it > 0 }?.let { "$it lib" }) {
+        LabeledField(
+            "Koordinat Maven (satu per baris)", p.extraDependencies, { v -> update { it.copy(extraDependencies = v) } },
+            mono = true, singleLine = false, placeholder = "com.squareup.okhttp3:okhttp:4.12.0",
+            supporting = "Dependensi transitif ikut diunduh otomatis • baris diawali # diabaikan"
+        )
+        libs.forEach { path ->
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Rounded.Description, null, Modifier.size(Dimens.IconInline), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                Spacer(Modifier.width(Dimens.IconTextGap))
+                Text(File(path).name.removePrefix("lib_"), style = WebifyTheme.mono.copy(fontSize = 12.sp), maxLines = 1,
+                    overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f).padding(end = 8.dp))
+                IconButton(onClick = { vm.removeLocalLibrary(path) }, modifier = Modifier.size(Dimens.IconButtonSmall)) {
+                    Icon(Icons.Rounded.Delete, "Hapus", Modifier.size(18.dp), tint = MaterialTheme.colorScheme.error)
+                }
+            }
+        }
+        SecondaryButton("Impor .aar / .jar lokal", onClick = { libPicker.launch(arrayOf("*/*")) }, icon = Icons.Rounded.Add, modifier = Modifier.fillMaxWidth())
     }
 }
 
