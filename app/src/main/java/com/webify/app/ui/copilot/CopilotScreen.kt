@@ -1,5 +1,6 @@
 package com.webify.app.ui.copilot
 
+import com.webify.app.ui.components.LocalDockInset
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
@@ -235,7 +236,7 @@ fun CopilotScreen(container: AppContainer) {
                 item(key = "bottom") { Spacer(Modifier.height(4.dp)) }
             }
             // Area input bawah: chips + field — terlindung dari keyboard & navigation bar
-            Column(Modifier.fillMaxWidth().imePadding().navigationBarsPadding()) {
+            Column(Modifier.fillMaxWidth().imePadding().navigationBarsPadding().padding(bottom = LocalDockInset.current)) {
                 PromptChips(
                     onHide = { mode = InputMode.HIDE_ELEMENT },
                     onCss = { mode = InputMode.CSS_JS },

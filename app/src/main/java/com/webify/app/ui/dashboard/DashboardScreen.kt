@@ -1,5 +1,6 @@
 package com.webify.app.ui.dashboard
 
+import com.webify.app.ui.components.LocalDockInset
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -106,6 +107,7 @@ fun DashboardScreen(container: AppContainer, onOpenProject: (String) -> Unit, on
     var showCreate by rememberSaveable { mutableStateOf(false) }
     var toDelete by remember { mutableStateOf<WebProjectEntity?>(null) }
     val toolchain = remember { container.toolchain.status() }
+    val dockInset = LocalDockInset.current
 
     LaunchedEffect(Unit) { vm.messages.collect { snackbar.showSnackbar(it) } }
 
@@ -113,6 +115,7 @@ fun DashboardScreen(container: AppContainer, onOpenProject: (String) -> Unit, on
         snackbarHost = { SnackbarHost(snackbar) },
         floatingActionButton = {
             ExtendedFloatingActionButton(
+                modifier = Modifier.padding(bottom = dockInset),
                 onClick = { showCreate = true },
                 icon = { Icon(Icons.Rounded.Add, null, Modifier.size(20.dp)) },
                 text = { Text("Proyek Baru") },
@@ -128,7 +131,7 @@ fun DashboardScreen(container: AppContainer, onOpenProject: (String) -> Unit, on
             contentPadding = PaddingValues(
                 start = Dimens.ScreenPadding, end = Dimens.ScreenPadding,
                 top = pad.calculateTopPadding() + 8.dp,
-                bottom = pad.calculateBottomPadding() + 96.dp
+                bottom = pad.calculateBottomPadding() + 96.dp + dockInset
             ),
             horizontalArrangement = Arrangement.spacedBy(Dimens.SectionGap),
             verticalArrangement = Arrangement.spacedBy(Dimens.SectionGap)

@@ -1,5 +1,6 @@
 package com.webify.app.ui.vault
 
+import com.webify.app.ui.components.LocalDockInset
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -107,6 +108,7 @@ fun KeystoreVaultScreen(container: AppContainer) {
     var importUri by remember { mutableStateOf<Uri?>(null) }
     var exportTarget by remember { mutableStateOf<KeystoreEntity?>(null) }
     var toDelete by remember { mutableStateOf<KeystoreEntity?>(null) }
+    val dockInset = LocalDockInset.current
 
     LaunchedEffect(Unit) { vm.messages.collect { snackbar.showSnackbar(it) } }
 
@@ -121,6 +123,7 @@ fun KeystoreVaultScreen(container: AppContainer) {
         snackbarHost = { SnackbarHost(snackbar) },
         floatingActionButton = {
             ExtendedFloatingActionButton(
+                modifier = Modifier.padding(bottom = dockInset),
                 onClick = { showCreate = true },
                 icon = { Icon(Icons.Rounded.Add, null, Modifier.size(20.dp)) },
                 text = { Text("Keystore Baru") }
@@ -132,7 +135,7 @@ fun KeystoreVaultScreen(container: AppContainer) {
             Modifier.fillMaxSize(),
             contentPadding = PaddingValues(
                 start = Dimens.ScreenPadding, end = Dimens.ScreenPadding,
-                top = pad.calculateTopPadding() + 8.dp, bottom = pad.calculateBottomPadding() + 96.dp
+                top = pad.calculateTopPadding() + 8.dp, bottom = pad.calculateBottomPadding() + 96.dp + dockInset
             ),
             verticalArrangement = Arrangement.spacedBy(Dimens.SectionGap)
         ) {

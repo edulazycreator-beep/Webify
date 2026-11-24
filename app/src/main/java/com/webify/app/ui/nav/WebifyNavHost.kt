@@ -1,6 +1,20 @@
 package com.webify.app.ui.nav
 
 import androidx.compose.animation.AnimatedContentTransitionScope
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.foundation.ExperimentalLayoutApi
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.isImeVisible
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.remember
+import androidx.compose.ui.Alignment
+import com.webify.app.ui.components.DockContentPadding
+import com.webify.app.ui.components.DockItem
+import com.webify.app.ui.components.LocalDockInset
+import com.webify.app.ui.components.WebifyBottomNavBar
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -75,6 +89,7 @@ private val topDestinations = listOf(
     TopDest(Routes.COPILOT, "Co-Pilot", Icons.Rounded.AutoAwesome, Icons.Filled.AutoAwesome)
 )
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun WebifyRoot(container: AppContainer) {
     val nav = rememberNavController()
@@ -129,30 +144,29 @@ fun WebifyRoot(container: AppContainer) {
             }
         }
     } else {
-        Scaffold(
-            contentWindowInsets = WindowInsets(0, 0, 0, 0),
-            bottomBar = {
-                if (showNav) {
-                    NavigationBar(containerColor = MaterialTheme.colorScheme.surface, tonalElevation = 0.dp) {
-                        topDestinations.forEach { d ->
-                            val sel = selected(d)
-                            NavigationBarItem(
-                                selected = sel,
-                                onClick = { go(d) },
-                                icon = { Icon(if (sel) d.selectedIcon else d.icon, d.label, Modifier.size(24.dp)) },
-                                label = { Text(d.label, style = MaterialTheme.typography.labelMedium) },
-                                colors = if (d.route == Routes.COPILOT) NavigationBarItemDefaults.colors(
-                                    selectedIconColor = MaterialTheme.colorScheme.onTertiaryContainer,
-                                    selectedTextColor = MaterialTheme.colorScheme.tertiary,
-                                    indicatorColor = MaterialTheme.colorScheme.tertiaryContainer
-                                ) else NavigationBarItemDefaults.colors()
-                            )
-                        }
-                    }
-                }
+        // Floating Pill Dock: konten mengisi penuh layar, dock melayang di atasnya.
+        val imeVisible = WindowInsets.isImeVisible
+        val showDock = showNav && route != Routes.STUDIO_PROJECT && !imeVisible
+        val dockItems = remember {
+            topDestinations.map { DockItem(it.route, it.label, it.icon, it.selectedIcon, accent = it.route == Routes.COPILOT) }
+        }
+        val selectedRoute = topDestinations.firstOrNull { selected(it) }?.route
+        Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
+            CompositionLocalProvider(LocalDockInset provides if (showDock) DockContentPadding else 0.dp) {
+                host(Modifier.fillMaxSize())
             }
-        ) { pad ->
-            Box(Modifier.padding(pad).consumeWindowInsets(pad)) { host(Modifier.fillMaxSize()) }
+            AnimatedVisibility(
+                visible = showDock,
+                modifier = Modifier.align(Alignment.BottomCenter),
+                enter = slideInVertically(spring(dampingRatio = 0.8f, stiffness = 380f)) { it } + fadeIn(),
+                exit = slideOutVertically(spring(stiffness = 500f)) { it } + fadeOut()
+            ) {
+                WebifyBottomNavBar(
+                    items = dockItems,
+                    selectedRoute = selectedRoute,
+                    onSelect = { item -> topDestinations.first { it.route == item.route }.let(::go) }
+                )
+            }
         }
     }
 }
