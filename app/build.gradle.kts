@@ -154,6 +154,8 @@ dependencies {
     implementation("com.android.tools:r8:8.3.37")
     // bundletool membawa aapt2-proto, protobuf & guava secara transitif.
     implementation("com.android.tools.build:bundletool:1.16.0")
+    // Guava dipakai langsung (ImmutableList untuk BuildBundleCommand); bundletool hanya membawanya di runtime.
+    implementation("com.google.guava:guava:32.1.3-jre")
     implementation("com.android.tools.build:apksig:8.3.0")
     implementation("org.bouncycastle:bcprov-jdk18on:1.78.1")
     implementation("org.bouncycastle:bcpkix-jdk18on:1.78.1")
