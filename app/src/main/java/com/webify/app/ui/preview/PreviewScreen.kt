@@ -196,7 +196,7 @@ fun PreviewScreen(projectId: String, container: AppContainer, onBack: () -> Unit
                                 }
                             }
                         }
-                        AnimatedVisibility(
+                        androidx.compose.animation.AnimatedVisibility(
                             visible = showHint,
                             enter = fadeIn(), exit = fadeOut(),
                             modifier = Modifier.align(Alignment.BottomCenter).padding(12.dp)
