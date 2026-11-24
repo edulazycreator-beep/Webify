@@ -121,21 +121,13 @@ fun KeystoreVaultScreen(container: AppContainer) {
 
     Scaffold(
         snackbarHost = { SnackbarHost(snackbar) },
-        floatingActionButton = {
-            ExtendedFloatingActionButton(
-                modifier = Modifier.padding(bottom = dockInset),
-                onClick = { showCreate = true },
-                icon = { Icon(Icons.Rounded.Add, null, Modifier.size(20.dp)) },
-                text = { Text("Keystore Baru") }
-            )
-        },
         containerColor = MaterialTheme.colorScheme.background
     ) { pad ->
         LazyColumn(
             Modifier.fillMaxSize(),
             contentPadding = PaddingValues(
                 start = Dimens.ScreenPadding, end = Dimens.ScreenPadding,
-                top = pad.calculateTopPadding() + 8.dp, bottom = pad.calculateBottomPadding() + 96.dp + dockInset
+                top = pad.calculateTopPadding() + 8.dp, bottom = pad.calculateBottomPadding() + 16.dp + dockInset
             ),
             verticalArrangement = Arrangement.spacedBy(Dimens.SectionGap)
         ) {
@@ -149,6 +141,8 @@ fun KeystoreVaultScreen(container: AppContainer) {
                         )
                     }
                     SecondaryButton("Impor", onClick = { importPicker.launch(arrayOf("*/*")) }, icon = Icons.Rounded.FileUpload)
+                    Spacer(Modifier.width(8.dp))
+                    SecondaryButton("Baru", onClick = { showCreate = true }, icon = Icons.Rounded.Add, tonal = true)
                 }
                 if (busy) LinearProgressIndicator(Modifier.fillMaxWidth().padding(top = 12.dp))
             }

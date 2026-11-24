@@ -66,6 +66,7 @@ import com.webify.app.AppContainer
 import com.webify.app.ui.console.BuildConsoleScreen
 import com.webify.app.ui.copilot.CopilotScreen
 import com.webify.app.ui.dashboard.DashboardScreen
+import com.webify.app.ui.preview.PreviewScreen
 import com.webify.app.ui.studio.StudioPickerScreen
 import com.webify.app.ui.studio.StudioScreen
 import com.webify.app.ui.vault.KeystoreVaultScreen
@@ -77,6 +78,8 @@ object Routes {
     const val KEYSTORES = "keystores"
     const val COPILOT = "copilot"
     const val CONSOLE = "console"
+    const val PREVIEW = "preview/{projectId}"
+    fun preview(id: String) = "preview/$id"
     fun studio(id: String) = "studio/$id"
 }
 
@@ -97,7 +100,7 @@ fun WebifyRoot(container: AppContainer) {
     val route = backStack?.destination?.route
     var lastProjectId by rememberSaveable { mutableStateOf<String?>(null) }
     val wide = LocalConfiguration.current.screenWidthDp >= 600
-    val showNav = route != Routes.CONSOLE
+    val showNav = route != Routes.CONSOLE && route != Routes.PREVIEW
 
     fun selected(dest: TopDest) = when (dest.route) {
         Routes.STUDIO -> route == Routes.STUDIO || route == Routes.STUDIO_PROJECT
@@ -146,7 +149,7 @@ fun WebifyRoot(container: AppContainer) {
     } else {
         // Floating Pill Dock: konten mengisi penuh layar, dock melayang di atasnya.
         val imeVisible = WindowInsets.isImeVisible
-        val showDock = showNav && route != Routes.STUDIO_PROJECT && !imeVisible
+        val showDock = showNav && route != Routes.STUDIO_PROJECT && route != Routes.PREVIEW && !imeVisible
         val dockItems = remember {
             topDestinations.map { DockItem(it.route, it.label, it.icon, it.selectedIcon, accent = it.route == Routes.COPILOT) }
         }
@@ -216,8 +219,16 @@ private fun WebifyNavGraph(
                 container = container,
                 onBack = { if (!nav.popBackStack()) nav.navigate(Routes.PROJECTS) },
                 onOpenConsole = openConsole,
-                onOpenCopilot = openCopilot
+                onOpenCopilot = openCopilot,
+                onOpenPreview = { pid -> nav.navigate(Routes.preview(pid)) { launchSingleTop = true } }
             )
+        }
+        composable(
+            Routes.PREVIEW,
+            arguments = listOf(navArgument("projectId") { type = NavType.StringType })
+        ) { entry ->
+            val id = entry.arguments?.getString("projectId") ?: return@composable
+            PreviewScreen(projectId = id, container = container, onBack = { nav.popBackStack() })
         }
         composable(Routes.KEYSTORES) { KeystoreVaultScreen(container = container) }
         composable(Routes.COPILOT) { CopilotScreen(container = container) }

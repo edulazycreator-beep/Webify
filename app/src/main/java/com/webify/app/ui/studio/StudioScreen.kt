@@ -97,6 +97,7 @@ import androidx.compose.material.icons.rounded.TouchApp
 import androidx.compose.material.icons.rounded.UnfoldLess
 import androidx.compose.material.icons.rounded.Upload
 import androidx.compose.material.icons.rounded.VerifiedUser
+import androidx.compose.material.icons.rounded.Visibility
 import androidx.compose.material.icons.rounded.Wallpaper
 import androidx.compose.material.icons.rounded.Warning
 import androidx.compose.material.icons.rounded.ZoomIn
@@ -215,7 +216,8 @@ fun StudioScreen(
     container: AppContainer,
     onBack: () -> Unit,
     onOpenConsole: () -> Unit,
-    onOpenCopilot: () -> Unit
+    onOpenCopilot: () -> Unit,
+    onOpenPreview: (String) -> Unit
 ) {
     val vm = appViewModel(key = "studio-$projectId") {
         StudioViewModel(projectId, it.projectRepository, it.keystoreRepository, it.buildManager, it.appScope)
@@ -277,13 +279,13 @@ fun StudioScreen(
         bottomBar = {
             if (p != null) {
                 StickyActionBar(
-                    saving = saving,
                     target = target,
                     enabled = !errors.hasErrors,
-                    onSave = {
+                    previewEnabled = errors.url == null,
+                    onPreview = {
                         scope.launch {
                             vm.flush()
-                            snackbar.showSnackbar("Perubahan disimpan")
+                            onOpenPreview(p.id)
                         }
                     },
                     onBuild = { vm.startBuild(target, onOpenConsole) }
@@ -301,6 +303,7 @@ fun StudioScreen(
             PillTabRow(
                 pagePosition = pagerState.currentPage + pagerState.currentPageOffsetFraction,
                 selected = pagerState.targetPage,
+                errorTabs = errorTabs(errors),
                 onSelect = { i -> scope.launch { pagerState.animateScrollToPage(i, animationSpec = spring(dampingRatio = 0.85f, stiffness = 300f)) } }
             )
             HorizontalPager(
@@ -337,7 +340,7 @@ fun StudioScreen(
 // =============================================================================
 
 @Composable
-private fun PillTabRow(pagePosition: Float, selected: Int, onSelect: (Int) -> Unit) {
+private fun PillTabRow(pagePosition: Float, selected: Int, errorTabs: Set<Int>, onSelect: (Int) -> Unit) {
     val density = LocalDensity.current
     val scroll = rememberScrollState()
     // posisi (x) & lebar tiap tab dalam dp, diisi saat layout
@@ -404,6 +407,16 @@ private fun PillTabRow(pagePosition: Float, selected: Int, onSelect: (Int) -> Un
                                 fontWeight = if (emphasis > 0.5f) FontWeight.SemiBold else FontWeight.Medium,
                                 color = fg, maxLines = 1
                             )
+                            // Titik merah: ada isian bermasalah di tab ini
+                            AnimatedVisibility(visible = i in errorTabs, enter = fadeIn(), exit = fadeOut()) {
+                                Row {
+                                    Spacer(Modifier.width(6.dp))
+                                    Box(
+                                        Modifier.size(8.dp).clip(CircleShape).background(MaterialTheme.colorScheme.error)
+                                            .border(1.5.dp, if (emphasis > 0.5f) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.surfaceContainer, CircleShape)
+                                    )
+                                }
+                            }
                         }
                     }
                 }
@@ -416,8 +429,14 @@ private fun PillTabRow(pagePosition: Float, selected: Int, onSelect: (Int) -> Un
 // Bar aksi bawah (selalu terjangkau ibu jari)
 // =============================================================================
 
+/** Peta error validasi → indeks tab yang memuat field tersebut. */
+private fun errorTabs(e: StudioErrors): Set<Int> = buildSet {
+    if (e.packageName != null || e.url != null || e.versionName != null || "adaptiveBgColor" in e.colors) add(0)
+    if (e.colors.keys.any { it != "adaptiveBgColor" }) add(1)
+}
+
 @Composable
-private fun StickyActionBar(saving: Boolean, target: BuildType, enabled: Boolean, onSave: () -> Unit, onBuild: () -> Unit) {
+private fun StickyActionBar(target: BuildType, enabled: Boolean, previewEnabled: Boolean, onPreview: () -> Unit, onBuild: () -> Unit) {
     Surface(
         color = MaterialTheme.colorScheme.surface,
         shadowElevation = 8.dp,
@@ -431,15 +450,15 @@ private fun StickyActionBar(saving: Boolean, target: BuildType, enabled: Boolean
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 OutlinedButton(
-                    onClick = onSave,
+                    onClick = onPreview,
+                    enabled = previewEnabled,
                     modifier = Modifier.weight(0.38f).height(50.dp),
                     shape = RoundedCornerShape(14.dp),
                     contentPadding = PaddingValues(horizontal = 12.dp)
                 ) {
-                    if (saving) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
-                    else Icon(Icons.Rounded.Save, null, Modifier.size(Dimens.IconInline))
+                    Icon(Icons.Rounded.Visibility, null, Modifier.size(Dimens.IconInline))
                     Spacer(Modifier.width(Dimens.IconTextGapSmall))
-                    Text("Simpan", fontSize = 14.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
+                    Text("Preview", fontSize = 14.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
                 }
                 Button(
                     onClick = onBuild,

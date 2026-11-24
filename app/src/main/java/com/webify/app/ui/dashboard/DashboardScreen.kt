@@ -1,5 +1,7 @@
 package com.webify.app.ui.dashboard
 
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material.icons.rounded.MoreVert
 import com.webify.app.ui.components.LocalDockInset
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
@@ -113,16 +115,6 @@ fun DashboardScreen(container: AppContainer, onOpenProject: (String) -> Unit, on
 
     Scaffold(
         snackbarHost = { SnackbarHost(snackbar) },
-        floatingActionButton = {
-            ExtendedFloatingActionButton(
-                modifier = Modifier.padding(bottom = dockInset),
-                onClick = { showCreate = true },
-                icon = { Icon(Icons.Rounded.Add, null, Modifier.size(20.dp)) },
-                text = { Text("Proyek Baru") },
-                containerColor = MaterialTheme.colorScheme.primary,
-                contentColor = MaterialTheme.colorScheme.onPrimary
-            )
-        },
         containerColor = MaterialTheme.colorScheme.background
     ) { pad ->
         LazyVerticalGrid(
@@ -131,13 +123,13 @@ fun DashboardScreen(container: AppContainer, onOpenProject: (String) -> Unit, on
             contentPadding = PaddingValues(
                 start = Dimens.ScreenPadding, end = Dimens.ScreenPadding,
                 top = pad.calculateTopPadding() + 8.dp,
-                bottom = pad.calculateBottomPadding() + 96.dp + dockInset
+                bottom = pad.calculateBottomPadding() + 16.dp + dockInset
             ),
             horizontalArrangement = Arrangement.spacedBy(Dimens.SectionGap),
             verticalArrangement = Arrangement.spacedBy(Dimens.SectionGap)
         ) {
             item(span = { GridItemSpan(maxLineSpan) }) {
-                Header(ui = ui, onUi = { container.securePrefs.saveUi(it) })
+                Header(ui = ui, onUi = { container.securePrefs.saveUi(it) }, onCreate = { showCreate = true })
             }
             item(span = { GridItemSpan(maxLineSpan) }) {
                 Row(Modifier.fillMaxWidth().height(IntrinsicSize.Max), horizontalArrangement = Arrangement.spacedBy(Dimens.SectionGap)) {
@@ -243,7 +235,7 @@ fun DashboardScreen(container: AppContainer, onOpenProject: (String) -> Unit, on
 }
 
 @Composable
-private fun Header(ui: UiSettings, onUi: (UiSettings) -> Unit) {
+private fun Header(ui: UiSettings, onUi: (UiSettings) -> Unit, onCreate: () -> Unit) {
     var menu by remember { mutableStateOf(false) }
     Row(
         Modifier.fillMaxWidth().padding(top = 8.dp),
@@ -261,6 +253,16 @@ private fun Header(ui: UiSettings, onUi: (UiSettings) -> Unit) {
                 "Mobile IDE & Website-to-App Builder", style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis
             )
+        }
+        FilledTonalButton(
+            onClick = onCreate,
+            shape = RoundedCornerShape(Dimens.RadiusControl),
+            contentPadding = PaddingValues(start = 12.dp, end = 16.dp),
+            modifier = Modifier.height(Dimens.SecondaryButtonHeight)
+        ) {
+            Icon(Icons.Rounded.Add, null, Modifier.size(Dimens.IconInline))
+            Spacer(Modifier.width(6.dp))
+            Text("Baru", fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
         }
         Box {
             IconButton(onClick = { menu = true }) {
@@ -328,12 +330,37 @@ private fun ProjectCard(
                     maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f)
                 )
             }
-            // Baris aksi: 4 tombol tinggi 38dp dengan jarak merata
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                CardActionButton("Build", Icons.Rounded.Build, onBuild, Modifier.weight(1f), emphasized = true)
-                CardActionButton("Edit", Icons.Rounded.Edit, onEdit, Modifier.weight(1f))
-                CardActionButton("Clone", Icons.Rounded.ContentCopy, onClone, Modifier.weight(1f))
-                CardActionButton("Hapus", Icons.Rounded.Delete, onDelete, Modifier.weight(1f), destructive = true)
+            // Baris aksi: Build (utama) + menu ⋮ (Edit, Clone, Hapus). Ketuk kartu = buka Studio.
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                CardActionButton("Build", Icons.Rounded.Build, onBuild, Modifier.width(112.dp), emphasized = true)
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    "Ketuk kartu untuk edit", style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                    maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f)
+                )
+                Box {
+                    var menu by remember { mutableStateOf(false) }
+                    IconButton(onClick = { menu = true }) { Icon(Icons.Rounded.MoreVert, "Opsi lain", Modifier.size(Dimens.IconInline)) }
+                    DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
+                        DropdownMenuItem(
+                            text = { Text("Buka di Studio") },
+                            leadingIcon = { Icon(Icons.Rounded.Edit, null, Modifier.size(Dimens.IconInline)) },
+                            onClick = { menu = false; onEdit() }
+                        )
+                        DropdownMenuItem(
+                            text = { Text("Duplikat proyek") },
+                            leadingIcon = { Icon(Icons.Rounded.ContentCopy, null, Modifier.size(Dimens.IconInline)) },
+                            onClick = { menu = false; onClone() }
+                        )
+                        HorizontalDivider()
+                        DropdownMenuItem(
+                            text = { Text("Hapus", color = MaterialTheme.colorScheme.error) },
+                            leadingIcon = { Icon(Icons.Rounded.Delete, null, Modifier.size(Dimens.IconInline), tint = MaterialTheme.colorScheme.error) },
+                            onClick = { menu = false; onDelete() }
+                        )
+                    }
+                }
             }
         }
     }
