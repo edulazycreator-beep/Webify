@@ -203,7 +203,7 @@ object PomParser {
     private fun resolve(value: String, props: Map<String, String>): String {
         var v = value.trim()
         repeat(5) {
-            val m = Regex("\\$\\{([^}]+)}").find(v) ?: return v
+            val m = Regex("\\$\\{([^}]+)\\}").find(v) ?: return v
             val replacement = props[m.groupValues[1]] ?: return v
             v = v.replaceRange(m.range, replacement)
         }
