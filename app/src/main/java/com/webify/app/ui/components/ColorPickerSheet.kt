@@ -226,7 +226,7 @@ fun ColorPickerBottomSheet(
                                     .clickable { hexText = hex.uppercase(); fromHex(hex) },
                                 contentAlignment = Alignment.Center
                             ) {
-                                AnimatedVisibility(
+                                androidx.compose.animation.AnimatedVisibility(
                                     visible = selected,
                                     enter = scaleIn(spring(dampingRatio = 0.5f, stiffness = 500f)),
                                     exit = scaleOut()
