@@ -83,6 +83,8 @@ public class MainActivity extends Activity {
     // ------------------------------------------------------------------ Window & layout
     private void setupWindow() {
         Window w = getWindow();
+        if (BuildConfig.KEEP_SCREEN_ON) w.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+        if (BuildConfig.PREVENT_SCREENSHOTS) w.addFlags(WindowManager.LayoutParams.FLAG_SECURE);
         w.addFlags(WindowManager.LayoutParams.FLAG_DRAWS_SYSTEM_BAR_BACKGROUNDS);
         w.setStatusBarColor(Color.TRANSPARENT);
         w.setNavigationBarColor(Color.TRANSPARENT);
@@ -217,7 +219,8 @@ public class MainActivity extends Activity {
         s.setDisplayZoomControls(false);
         s.setLoadWithOverviewMode(true);
         s.setUseWideViewPort(true);
-        s.setMediaPlaybackRequiresUserGesture(false);
+        s.setMediaPlaybackRequiresUserGesture(!BuildConfig.AUTOPLAY_MEDIA);
+        s.setTextZoom(BuildConfig.TEXT_ZOOM);
         s.setJavaScriptCanOpenWindowsAutomatically(true);
         s.setSupportMultipleWindows(true);
         s.setGeolocationEnabled(BuildConfig.PERM_GEOLOCATION);
@@ -230,17 +233,38 @@ public class MainActivity extends Activity {
         String ua = BuildConfig.CUSTOM_USER_AGENT;
         if (ua != null && ua.trim().length() > 0) {
             s.setUserAgentString(ua.trim());
+        } else if (BuildConfig.DESKTOP_MODE) {
+            s.setUserAgentString(DESKTOP_UA + " WebifyApp/" + BuildConfig.VERSION_NAME);
         } else {
             s.setUserAgentString(s.getUserAgentString() + " WebifyApp/" + BuildConfig.VERSION_NAME);
         }
-        if (Build.VERSION.SDK_INT >= 26) s.setSafeBrowsingEnabled(true);
+        if (Build.VERSION.SDK_INT >= 26) s.setSafeBrowsingEnabled(BuildConfig.SAFE_BROWSING);
+        applyForceDark(s);
 
         CookieManager cm = CookieManager.getInstance();
         cm.setAcceptCookie(true);
-        cm.setAcceptThirdPartyCookies(webView, true);
+        cm.setAcceptThirdPartyCookies(webView, BuildConfig.THIRD_PARTY_COOKIES);
+
+        if (BuildConfig.CLEAR_CACHE_ON_START) {
+            webView.clearCache(true);
+            webView.clearHistory();
+        }
 
         webView.setOverScrollMode(View.OVER_SCROLL_IF_CONTENT_SCROLLS);
         webView.setScrollBarStyle(View.SCROLLBARS_INSIDE_OVERLAY);
+        webView.setVerticalScrollBarEnabled(!BuildConfig.HIDE_SCROLLBARS);
+        webView.setHorizontalScrollBarEnabled(!BuildConfig.HIDE_SCROLLBARS);
+        if (BuildConfig.DISABLE_TEXT_SELECTION) {
+            webView.setLongClickable(false);
+            webView.setHapticFeedbackEnabled(false);
+            webView.setOnLongClickListener(new View.OnLongClickListener() {
+                @Override public boolean onLongClick(View v) {
+                    // Tetap izinkan seleksi di kolom input (hit test EDIT_TEXT)
+                    WebView.HitTestResult r = webView.getHitTestResult();
+                    return r == null || r.getType() != WebView.HitTestResult.EDIT_TEXT_TYPE;
+                }
+            });
+        }
         webView.setBackgroundColor(Color.WHITE);
         if ((getApplicationInfo().flags & android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0) {
             WebView.setWebContentsDebuggingEnabled(true);
@@ -412,6 +436,23 @@ public class MainActivity extends Activity {
     WebifyWebViewClient getWebifyClient() { return webViewClient; }
 
     // ------------------------------------------------------------------ Lifecycle & system
+    /** Mode gelap paksa: API 33+ algorithmic darkening, API 29–32 setForceDark. */
+    @SuppressWarnings("deprecation")
+    private void applyForceDark(WebSettings s) {
+        if (!BuildConfig.FORCE_DARK) return;
+        try {
+            if (Build.VERSION.SDK_INT >= 33) {
+                s.setAlgorithmicDarkeningAllowed(true);
+            } else if (Build.VERSION.SDK_INT >= 29) {
+                s.setForceDark(WebSettings.FORCE_DARK_ON);
+            }
+        } catch (Throwable t) {
+            Log.w(TAG, "Force dark tidak didukung", t);
+        }
+    }
+
+    private long lastBackPress = 0L;
+
     @Override
     public void onBackPressed() {
         if (chromeClient != null && chromeClient.isCustomViewShowing()) {
@@ -423,6 +464,9 @@ public class MainActivity extends Activity {
         }
         if (webView.canGoBack()) {
             webView.goBack();
+        } else if (BuildConfig.CONFIRM_EXIT && System.currentTimeMillis() - lastBackPress > 2000) {
+            lastBackPress = System.currentTimeMillis();
+            android.widget.Toast.makeText(this, "Tekan kembali sekali lagi untuk keluar", android.widget.Toast.LENGTH_SHORT).show();
         } else {
             super.onBackPressed();
         }
@@ -496,6 +540,7 @@ public class MainActivity extends Activity {
         return checkSelfPermission(perm) == PackageManager.PERMISSION_GRANTED;
     }
 
+    static final String DESKTOP_UA = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";
     static final String PERM_CAMERA = Manifest.permission.CAMERA;
     static final String PERM_AUDIO = Manifest.permission.RECORD_AUDIO;
     static final String PERM_FINE_LOCATION = Manifest.permission.ACCESS_FINE_LOCATION;

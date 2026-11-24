@@ -10,10 +10,12 @@ import android.util.Log;
 import android.webkit.RenderProcessGoneDetail;
 import android.webkit.WebResourceError;
 import android.webkit.WebResourceRequest;
+import android.webkit.WebResourceResponse;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
 import android.widget.Toast;
 
+import java.io.ByteArrayInputStream;
 import java.net.URISyntaxException;
 
 /**
@@ -25,6 +27,18 @@ public class WebifyWebViewClient extends WebViewClient {
     private static final String TAG = "WebifyClient";
     private final MainActivity activity;
     private final String[] internalHosts;
+
+    /** Daftar host iklan/pelacak umum untuk pemblokir iklan ringan (cocok sufiks domain). */
+    private static final String[] AD_HOSTS = {
+            "doubleclick.net", "googlesyndication.com", "googleadservices.com", "adservice.google.com",
+            "pagead2.googlesyndication.com", "google-analytics.com", "googletagservices.com", "adnxs.com",
+            "adsrvr.org", "taboola.com", "outbrain.com", "criteo.com", "criteo.net", "amazon-adsystem.com",
+            "ads.yahoo.com", "advertising.com", "pubmatic.com", "rubiconproject.com", "openx.net",
+            "scorecardresearch.com", "quantserve.com", "popads.net", "popcash.net", "propellerads.com",
+            "adsterra.com", "exoclick.com", "mgid.com", "revcontent.com", "zedo.com", "media.net",
+            "moatads.com", "yieldmo.com", "smartadserver.com", "adform.net", "bidswitch.net", "casalemedia.com",
+            "unityads.unity3d.com", "applovin.com", "inmobi.com", "startappservice.com", "hotjar.com"
+    };
 
     public WebifyWebViewClient(MainActivity activity) {
         this.activity = activity;
@@ -156,6 +170,24 @@ public class WebifyWebViewClient extends WebViewClient {
         }
     }
 
+    // ------------------------------------------------------------------ Ad block
+    static boolean isAdHost(String host) {
+        if (host == null) return false;
+        String h = host.toLowerCase();
+        for (String ad : AD_HOSTS) {
+            if (h.equals(ad) || h.endsWith("." + ad)) return true;
+        }
+        return false;
+    }
+
+    @Override
+    public WebResourceResponse shouldInterceptRequest(WebView view, WebResourceRequest request) {
+        if (BuildConfig.AD_BLOCK && !request.isForMainFrame() && isAdHost(request.getUrl().getHost())) {
+            return new WebResourceResponse("text/plain", "utf-8", new ByteArrayInputStream(new byte[0]));
+        }
+        return super.shouldInterceptRequest(view, request);
+    }
+
     // ------------------------------------------------------------------ Lifecycle halaman
     @Override
     public void onPageStarted(WebView view, String url, Bitmap favicon) {
@@ -182,9 +214,14 @@ public class WebifyWebViewClient extends WebViewClient {
         return BuildConfig.ENABLE_JAVASCRIPT && url != null && !url.startsWith("data:") && !activity.showingOffline;
     }
 
+    private static final String NO_SELECT_CSS =
+            "*:not(input):not(textarea):not([contenteditable]){-webkit-user-select:none!important;user-select:none!important;-webkit-touch-callout:none!important}";
+
     private void injectCss(WebView view) {
-        String css = BuildConfig.CUSTOM_CSS;
-        if (css == null || css.trim().length() == 0) return;
+        String css = BuildConfig.CUSTOM_CSS == null ? "" : BuildConfig.CUSTOM_CSS;
+        if (BuildConfig.DISABLE_TEXT_SELECTION) css = NO_SELECT_CSS + "\n" + css;
+        if (BuildConfig.HIDE_SCROLLBARS) css = "::-webkit-scrollbar{display:none!important}\n" + css;
+        if (css.trim().length() == 0) return;
         String b64 = b64(css);
         String js = "(function(){try{var id='webify-custom-css';var s=document.getElementById(id);"
                 + "if(!s){s=document.createElement('style');s.id=id;(document.head||document.documentElement).appendChild(s);}"

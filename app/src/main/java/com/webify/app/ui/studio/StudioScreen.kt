@@ -1,6 +1,28 @@
 package com.webify.app.ui.studio
 
 import android.net.Uri
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.foundation.background
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
+import androidx.compose.material.icons.rounded.Block
+import androidx.compose.material.icons.rounded.CleaningServices
+import androidx.compose.material.icons.rounded.Computer
+import androidx.compose.material.icons.rounded.Cookie
+import androidx.compose.material.icons.rounded.DarkMode
+import androidx.compose.material.icons.automirrored.rounded.ExitToApp
+import androidx.compose.material.icons.rounded.LightMode
+import androidx.compose.material.icons.rounded.NoPhotography
+import androidx.compose.material.icons.rounded.Palette
+import androidx.compose.material.icons.rounded.PlayCircle
+import androidx.compose.material.icons.rounded.Shield
+import androidx.compose.material.icons.rounded.TextFields
+import androidx.compose.material.icons.rounded.TouchApp
+import androidx.compose.material.icons.rounded.UnfoldLess
+import androidx.compose.material.icons.rounded.VerifiedUser
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
@@ -69,12 +91,10 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.PrimaryScrollableTabRow
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
@@ -136,7 +156,15 @@ import java.io.File
 import java.text.DateFormat
 import java.util.Date
 
-private val TABS = listOf("Umum & Branding", "WebView & Navigasi", "Splash & Offline", "Izin & Code Injection", "Build & Export")
+private data class StudioTab(val title: String, val short: String, val icon: ImageVector)
+
+private val TABS = listOf(
+    StudioTab("Umum & Branding", "Umum", Icons.Rounded.Palette),
+    StudioTab("WebView & Navigasi", "WebView", Icons.Rounded.Language),
+    StudioTab("Splash & Offline", "Splash", Icons.Rounded.Smartphone),
+    StudioTab("Izin & Code Injection", "Izin & Kode", Icons.Rounded.Code),
+    StudioTab("Build & Export", "Build", Icons.Rounded.RocketLaunch)
+)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -157,7 +185,9 @@ fun StudioScreen(
     val builds by vm.builds.collectAsStateWithLifecycle()
     val snackbar = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
-    var tab by rememberSaveable { mutableIntStateOf(0) }
+    var savedPage by rememberSaveable { mutableIntStateOf(0) }
+    val pagerState = rememberPagerState(initialPage = savedPage) { TABS.size }
+    LaunchedEffect(pagerState.currentPage) { savedPage = pagerState.currentPage }
 
     LaunchedEffect(Unit) { vm.messages.collect { snackbar.showSnackbar(it) } }
     LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { vm.reload() }
@@ -199,40 +229,118 @@ fun StudioScreen(
             return@Scaffold
         }
         Column(Modifier.padding(pad).fillMaxSize()) {
-            PrimaryScrollableTabRow(
-                selectedTabIndex = tab,
-                edgePadding = Dimens.ScreenPadding,
-                containerColor = MaterialTheme.colorScheme.background
-            ) {
-                TABS.forEachIndexed { i, t ->
-                    Tab(
-                        selected = tab == i, onClick = { tab = i },
-                        text = { Text(t, style = MaterialTheme.typography.labelLarge, maxLines = 1, overflow = TextOverflow.Ellipsis) }
+            StudioTabStrip(
+                selected = pagerState.currentPage,
+                progress = pagerState.currentPage + pagerState.currentPageOffsetFraction,
+                onSelect = { i -> scope.launch { pagerState.animateScrollToPage(i) } }
+            )
+            val update: ((WebProjectEntity) -> WebProjectEntity) -> Unit = vm::update
+            HorizontalPager(
+                state = pagerState,
+                modifier = Modifier.fillMaxSize(),
+                beyondViewportPageCount = 1,
+                key = { it }
+            ) { page ->
+                Column(
+                    Modifier.fillMaxSize().verticalScroll(rememberScrollState()).imePadding()
+                        .padding(horizontal = Dimens.ScreenPadding, vertical = 12.dp),
+                    verticalArrangement = Arrangement.spacedBy(Dimens.SectionGap)
+                ) {
+                    when (page) {
+                        0 -> GeneralTab(p, errors, update, vm)
+                        1 -> WebViewTab(p, update)
+                        2 -> SplashOfflineTab(p, errors, update)
+                        3 -> PermissionsCodeTab(p, update, onAskAi = { instruction ->
+                            container.copilotBus.post(CopilotRequest(p.id, PromptBuilder.cssJsInjector(instruction), "🎨 $instruction"))
+                            onOpenCopilot()
+                        })
+                        4 -> BuildTab(
+                            p, keystores, builds, errors, update,
+                            onBuild = { type -> vm.startBuild(type, onOpenConsole) }
+                        )
+                    }
+                    PageFooter(
+                        page = page,
+                        onPrev = { scope.launch { pagerState.animateScrollToPage(page - 1) } },
+                        onNext = { scope.launch { pagerState.animateScrollToPage(page + 1) } }
                     )
+                    Spacer(Modifier.height(32.dp))
                 }
-            }
-            Column(
-                Modifier.fillMaxSize().verticalScroll(rememberScrollState()).imePadding()
-                    .padding(Dimens.ScreenPadding),
-                verticalArrangement = Arrangement.spacedBy(Dimens.SectionGap)
-            ) {
-                val update: ((WebProjectEntity) -> WebProjectEntity) -> Unit = vm::update
-                when (tab) {
-                    0 -> GeneralTab(p, errors, update, vm)
-                    1 -> WebViewTab(p, update)
-                    2 -> SplashOfflineTab(p, errors, update)
-                    3 -> PermissionsCodeTab(p, update, onAskAi = { instruction ->
-                        container.copilotBus.post(CopilotRequest(p.id, PromptBuilder.cssJsInjector(instruction), "🎨 $instruction"))
-                        onOpenCopilot()
-                    })
-                    4 -> BuildTab(
-                        p, keystores, builds, errors, update,
-                        onBuild = { type -> vm.startBuild(type, onOpenConsole) }
-                    )
-                }
-                Spacer(Modifier.height(48.dp))
             }
         }
+    }
+}
+
+/**
+ * Strip tab berbentuk pil (ikon + label) yang bisa di-scroll, dengan indikator progres
+ * di bawahnya yang mengikuti geseran pager secara real-time.
+ */
+@Composable
+private fun StudioTabStrip(selected: Int, progress: Float, onSelect: (Int) -> Unit) {
+    val listState = rememberLazyListState()
+    LaunchedEffect(selected) { listState.animateScrollToItem(maxOf(0, selected - 1)) }
+    Column(Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.background)) {
+        LazyRow(
+            state = listState,
+            contentPadding = PaddingValues(horizontal = Dimens.ScreenPadding, vertical = 8.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            itemsIndexed(TABS) { i, t ->
+                val isSel = i == selected
+                val bg by animateColorAsState(
+                    if (isSel) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceContainer, label = "tabBg"
+                )
+                val fg by animateColorAsState(
+                    if (isSel) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant, label = "tabFg"
+                )
+                Surface(
+                    onClick = { onSelect(i) },
+                    shape = RoundedCornerShape(Dimens.RadiusControl),
+                    color = bg,
+                    border = if (isSel) null else BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+                    modifier = Modifier.height(40.dp)
+                ) {
+                    Row(Modifier.padding(horizontal = 14.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Icon(t.icon, null, Modifier.size(18.dp), tint = fg)
+                        Spacer(Modifier.width(Dimens.IconTextGapSmall))
+                        Text(t.short, style = MaterialTheme.typography.labelLarge, fontWeight = if (isSel) FontWeight.SemiBold else FontWeight.Medium, color = fg, maxLines = 1)
+                    }
+                }
+            }
+        }
+        // Indikator progres langkah (1/5 … 5/5) mengikuti geseran
+        Row(
+            Modifier.fillMaxWidth().padding(horizontal = Dimens.ScreenPadding),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                TABS[selected].title, style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Medium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f).padding(end = 12.dp)
+            )
+            Text("${selected + 1}/${TABS.size}", style = WebifyTheme.mono.copy(fontSize = 11.sp, lineHeight = 14.sp), color = MaterialTheme.colorScheme.primary)
+        }
+        Spacer(Modifier.height(6.dp))
+        Box(Modifier.fillMaxWidth().padding(horizontal = Dimens.ScreenPadding).height(3.dp).clip(RoundedCornerShape(50)).background(MaterialTheme.colorScheme.outlineVariant)) {
+            Box(
+                Modifier.fillMaxWidth(((progress + 1f) / TABS.size).coerceIn(0f, 1f)).height(3.dp)
+                    .clip(RoundedCornerShape(50)).background(MaterialTheme.colorScheme.primary)
+            )
+        }
+        Spacer(Modifier.height(4.dp))
+    }
+}
+
+/** Navigasi Sebelumnya / Berikutnya di bawah setiap halaman. */
+@Composable
+private fun PageFooter(page: Int, onPrev: () -> Unit, onNext: () -> Unit) {
+    Row(Modifier.fillMaxWidth().padding(top = 4.dp), horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
+        if (page > 0) {
+            SecondaryButton("← ${TABS[page - 1].short}", onClick = onPrev, modifier = Modifier.weight(1f))
+        } else Spacer(Modifier.weight(1f))
+        if (page < TABS.lastIndex) {
+            SecondaryButton("${TABS[page + 1].short} →", onClick = onNext, modifier = Modifier.weight(1f), tonal = true)
+        } else Spacer(Modifier.weight(1f))
     }
 }
 
@@ -334,6 +442,45 @@ private fun WebViewTab(p: WebProjectEntity, update: ((WebProjectEntity) -> WebPr
         if (p.showTopProgressBar) ColorField("Warna progress bar", p.progressBarColorHex, { v -> update { it.copy(progressBarColorHex = v) } })
         SwitchRow("Routing intent eksternal", p.enableExternalIntentRouting, { v -> update { it.copy(enableExternalIntentRouting = v) } },
             "tel:, mailto:, whatsapp:, tg:, intent:, domain luar → aplikasi/browser", Icons.Rounded.OpenInBrowser)
+    }
+    SectionCard("Tampilan Halaman", Icons.Rounded.ZoomIn, "Ukuran teks, mode desktop & tema gelap") {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("Ukuran teks", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium, modifier = Modifier.weight(1f).padding(end = 12.dp))
+            Pill("${p.textZoomPercent}%", MaterialTheme.colorScheme.primaryContainer, MaterialTheme.colorScheme.onPrimaryContainer, mono = true)
+        }
+        Slider(
+            value = p.textZoomPercent.toFloat(),
+            onValueChange = { v -> update { it.copy(textZoomPercent = ((v / 10).toInt() * 10).coerceIn(50, 200)) } },
+            valueRange = 50f..200f, steps = 14
+        )
+        SwitchRow("Mode desktop", p.desktopMode, { v -> update { it.copy(desktopMode = v) } },
+            "Muat versi desktop website (User-Agent Chrome desktop)", Icons.Rounded.Computer)
+        SwitchRow("Paksa mode gelap", p.forceDarkMode, { v -> update { it.copy(forceDarkMode = v) } },
+            "Gelapkan website otomatis (Android 10+)", Icons.Rounded.DarkMode)
+        SwitchRow("Sembunyikan scrollbar", p.hideScrollbars, { v -> update { it.copy(hideScrollbars = v) } },
+            "Tampilan lebih bersih seperti aplikasi native", Icons.Rounded.UnfoldLess)
+        SwitchRow("Putar media otomatis", p.autoplayMedia, { v -> update { it.copy(autoplayMedia = v) } },
+            "Video/audio boleh diputar tanpa sentuhan", Icons.Rounded.PlayCircle)
+    }
+    SectionCard("Privasi & Keamanan", Icons.Rounded.Shield, "Iklan, cookie, dan perlindungan layar") {
+        SwitchRow("Blokir iklan & pelacak", p.adBlockEnabled, { v -> update { it.copy(adBlockEnabled = v) } },
+            "Blokir ±40 jaringan iklan/analitik populer", Icons.Rounded.Block)
+        SwitchRow("Cookie pihak ketiga", p.allowThirdPartyCookies, { v -> update { it.copy(allowThirdPartyCookies = v) } },
+            "Diperlukan untuk login Google/Facebook tertanam", Icons.Rounded.Cookie)
+        SwitchRow("Safe Browsing", p.safeBrowsing, { v -> update { it.copy(safeBrowsing = v) } },
+            "Peringatan situs berbahaya dari Google", Icons.Rounded.VerifiedUser)
+        SwitchRow("Cegah screenshot & rekam layar", p.preventScreenshots, { v -> update { it.copy(preventScreenshots = v) } },
+            "Lindungi konten sensitif (FLAG_SECURE)", Icons.Rounded.NoPhotography)
+        SwitchRow("Bersihkan cache saat dibuka", p.clearCacheOnStart, { v -> update { it.copy(clearCacheOnStart = v) } },
+            "Selalu muat konten terbaru", Icons.Rounded.CleaningServices)
+    }
+    SectionCard("Perilaku Aplikasi", Icons.Rounded.TouchApp, "Interaksi & kenyamanan pengguna") {
+        SwitchRow("Layar tetap menyala", p.keepScreenOn, { v -> update { it.copy(keepScreenOn = v) } },
+            "Cocok untuk dashboard, POS, atau video", Icons.Rounded.LightMode)
+        SwitchRow("Konfirmasi sebelum keluar", p.confirmExit, { v -> update { it.copy(confirmExit = v) } },
+            "Tekan kembali dua kali untuk keluar", Icons.AutoMirrored.Rounded.ExitToApp)
+        SwitchRow("Nonaktifkan seleksi teks", p.disableTextSelection, { v -> update { it.copy(disableTextSelection = v) } },
+            "Matikan tekan-lama & salin (kolom input tetap bisa)", Icons.Rounded.TextFields)
     }
     SectionCard("Upload & Unduhan", Icons.Rounded.Download) {
         SwitchRow("Upload file (galeri/kamera)", p.enableFileUploadChooser, { v -> update { it.copy(enableFileUploadChooser = v) } }, icon = Icons.Rounded.Upload)

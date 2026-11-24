@@ -108,7 +108,7 @@ object AabPackager {
     }
 
     /**
-     * Perakit AAB bawaan: base/** + BundleConfig.pb di root, tanpa entri direktori.
+     * Perakit AAB bawaan: base/(semua file) + BundleConfig.pb di root, tanpa entri direktori.
      * Format identik dengan keluaran `bundletool build-bundle` untuk modul base tunggal.
      */
     private fun assembleBundle(base: File, out: File, log: BuildLogger) {

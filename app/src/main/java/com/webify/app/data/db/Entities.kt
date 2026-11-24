@@ -66,6 +66,21 @@ data class WebProjectEntity(
     val cacheMode: WebCacheMode = WebCacheMode.LOAD_DEFAULT,
     val allowMixedContent: Boolean = false,
 
+    // WebView lanjutan (DB v2)
+    val desktopMode: Boolean = false,
+    val textZoomPercent: Int = 100,
+    val forceDarkMode: Boolean = false,
+    val hideScrollbars: Boolean = false,
+    val adBlockEnabled: Boolean = false,
+    val allowThirdPartyCookies: Boolean = true,
+    val safeBrowsing: Boolean = true,
+    val preventScreenshots: Boolean = false,
+    val clearCacheOnStart: Boolean = false,
+    val keepScreenOn: Boolean = false,
+    val confirmExit: Boolean = false,
+    val disableTextSelection: Boolean = false,
+    val autoplayMedia: Boolean = true,
+
     // Perizinan & fitur native
     val permCamera: Boolean = false,
     val permMicrophone: Boolean = false,
