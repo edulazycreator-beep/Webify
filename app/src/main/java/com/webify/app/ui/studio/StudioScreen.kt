@@ -1,0 +1,598 @@
+package com.webify.app.ui.studio
+
+import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.ArrowBack
+import androidx.compose.material.icons.rounded.Android
+import androidx.compose.material.icons.rounded.AutoAwesome
+import androidx.compose.material.icons.rounded.Bolt
+import androidx.compose.material.icons.rounded.Brush
+import androidx.compose.material.icons.rounded.CameraAlt
+import androidx.compose.material.icons.rounded.CheckCircle
+import androidx.compose.material.icons.rounded.CloudOff
+import androidx.compose.material.icons.rounded.Code
+import androidx.compose.material.icons.rounded.Download
+import androidx.compose.material.icons.rounded.Error
+import androidx.compose.material.icons.rounded.FolderZip
+import androidx.compose.material.icons.rounded.Image
+import androidx.compose.material.icons.rounded.InstallMobile
+import androidx.compose.material.icons.rounded.Language
+import androidx.compose.material.icons.rounded.Link
+import androidx.compose.material.icons.rounded.LocationOn
+import androidx.compose.material.icons.rounded.Mic
+import androidx.compose.material.icons.rounded.Notifications
+import androidx.compose.material.icons.rounded.OpenInBrowser
+import androidx.compose.material.icons.rounded.PlayArrow
+import androidx.compose.material.icons.rounded.Refresh
+import androidx.compose.material.icons.rounded.RocketLaunch
+import androidx.compose.material.icons.rounded.Security
+import androidx.compose.material.icons.rounded.Share
+import androidx.compose.material.icons.rounded.Shop
+import androidx.compose.material.icons.rounded.Smartphone
+import androidx.compose.material.icons.rounded.SwipeLeft
+import androidx.compose.material.icons.rounded.Upload
+import androidx.compose.material.icons.rounded.Wallpaper
+import androidx.compose.material.icons.rounded.Warning
+import androidx.compose.material.icons.rounded.ZoomIn
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.RadioButton
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.ScrollableTabRow
+import androidx.compose.material3.Slider
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Tab
+import androidx.compose.material3.Text
+import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LifecycleEventEffect
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.webify.app.AppContainer
+import com.webify.app.data.db.BuildRecordEntity
+import com.webify.app.data.db.KeystoreEntity
+import com.webify.app.data.db.WebProjectEntity
+import com.webify.app.domain.BuildStatus
+import com.webify.app.domain.BuildType
+import com.webify.app.domain.OfflineModeType
+import com.webify.app.domain.ScreenOrientation
+import com.webify.app.domain.SourceType
+import com.webify.app.domain.StatusBarStyle
+import com.webify.app.domain.WebCacheMode
+import com.webify.app.ui.StudioErrors
+import com.webify.app.ui.StudioViewModel
+import com.webify.app.ui.appViewModel
+import com.webify.app.ui.components.CodeEditor
+import com.webify.app.ui.components.ColorField
+import com.webify.app.ui.components.EmptyState
+import com.webify.app.ui.components.LabeledField
+import com.webify.app.ui.components.Pill
+import com.webify.app.ui.components.SectionCard
+import com.webify.app.ui.components.SelectField
+import com.webify.app.ui.components.SwitchRow
+import com.webify.app.ui.dashboard.ProjectIcon
+import com.webify.app.ai.CopilotRequest
+import com.webify.app.ai.PromptBuilder
+import com.webify.app.ui.theme.WebifyTheme
+import com.webify.app.util.FileActions
+import kotlinx.coroutines.launch
+import java.io.File
+import java.text.DateFormat
+import java.util.Date
+
+private val TABS = listOf("Umum & Branding", "WebView & Navigasi", "Splash & Offline", "Izin & Code Injection", "Build & Export")
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun StudioScreen(
+    projectId: String,
+    container: AppContainer,
+    onBack: () -> Unit,
+    onOpenConsole: () -> Unit,
+    onOpenCopilot: () -> Unit
+) {
+    val vm = appViewModel(key = "studio-$projectId") {
+        StudioViewModel(projectId, it.projectRepository, it.keystoreRepository, it.buildManager, it.appScope)
+    }
+    val draft by vm.draft.collectAsStateWithLifecycle()
+    val errors by vm.errors.collectAsStateWithLifecycle()
+    val saving by vm.saving.collectAsStateWithLifecycle()
+    val keystores by vm.keystores.collectAsStateWithLifecycle()
+    val builds by vm.builds.collectAsStateWithLifecycle()
+    val snackbar = remember { SnackbarHostState() }
+    val scope = rememberCoroutineScope()
+    var tab by rememberSaveable { mutableIntStateOf(0) }
+
+    LaunchedEffect(Unit) { vm.messages.collect { snackbar.showSnackbar(it) } }
+    LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { vm.reload() }
+    LifecycleEventEffect(Lifecycle.Event.ON_PAUSE) { scope.launch { vm.flush() } }
+
+    val p = draft
+    Scaffold(
+        snackbarHost = { SnackbarHost(snackbar) },
+        topBar = {
+            TopAppBar(
+                navigationIcon = { IconButton(onClick = { scope.launch { vm.flush(); onBack() } }) { Icon(Icons.AutoMirrored.Rounded.ArrowBack, "Kembali") } },
+                title = {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        if (p != null) { ProjectIcon(p, 32); Spacer(Modifier.width(10.dp)) }
+                        Column {
+                            Text(p?.appName ?: "Builder Studio", style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            Text(
+                                if (saving) "Menyimpan…" else "Tersimpan otomatis",
+                                style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                },
+                actions = {
+                    IconButton(onClick = {
+                        if (p != null) container.copilotBus.post(
+                            CopilotRequest(p.id, PromptBuilder.cssJsInjector("Sarankan perbaikan tampilan mobile untuk website ini (sembunyikan elemen yang tidak perlu di aplikasi seperti banner 'download app', perbesar target sentuh)."), "✨ Saran perbaikan tampilan untuk ${p.appName}")
+                        )
+                        onOpenCopilot()
+                    }) { Icon(Icons.Rounded.AutoAwesome, "AI", tint = MaterialTheme.colorScheme.tertiary) }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background)
+            )
+        },
+        containerColor = MaterialTheme.colorScheme.background
+    ) { pad ->
+        if (p == null) {
+            Box(Modifier.fillMaxSize().padding(pad), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
+            return@Scaffold
+        }
+        Column(Modifier.padding(pad).fillMaxSize()) {
+            ScrollableTabRow(
+                selectedTabIndex = tab,
+                edgePadding = 12.dp,
+                containerColor = MaterialTheme.colorScheme.background,
+                divider = {}
+            ) {
+                TABS.forEachIndexed { i, t ->
+                    Tab(selected = tab == i, onClick = { tab = i }, text = { Text(t, style = MaterialTheme.typography.labelLarge) })
+                }
+            }
+            Column(
+                Modifier.fillMaxSize().verticalScroll(rememberScrollState()).imePadding()
+                    .padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(14.dp)
+            ) {
+                val update: ((WebProjectEntity) -> WebProjectEntity) -> Unit = vm::update
+                when (tab) {
+                    0 -> GeneralTab(p, errors, update, vm)
+                    1 -> WebViewTab(p, update)
+                    2 -> SplashOfflineTab(p, errors, update)
+                    3 -> PermissionsCodeTab(p, update, onAskAi = { instruction ->
+                        container.copilotBus.post(CopilotRequest(p.id, PromptBuilder.cssJsInjector(instruction), "🎨 $instruction"))
+                        onOpenCopilot()
+                    })
+                    4 -> BuildTab(
+                        p, keystores, builds, errors, update,
+                        onBuild = { type -> vm.startBuild(type, onOpenConsole) }
+                    )
+                }
+                Spacer(Modifier.height(48.dp))
+            }
+        }
+    }
+}
+
+// ------------------------------------------------------------------ Tab 1
+@Composable
+private fun GeneralTab(p: WebProjectEntity, e: StudioErrors, update: ((WebProjectEntity) -> WebProjectEntity) -> Unit, vm: StudioViewModel) {
+    val iconPicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri: Uri? -> uri?.let(vm::setIcon) }
+    val zipPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? -> uri?.let(vm::setSiteZip) }
+
+    SectionCard("Sumber Website", Icons.Rounded.Language) {
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            FilterChip(selected = p.sourceType == SourceType.URL, onClick = { update { it.copy(sourceType = SourceType.URL) } },
+                label = { Text("URL Website") }, leadingIcon = { Icon(Icons.Rounded.Link, null, Modifier.size(20.dp)) })
+            FilterChip(selected = p.sourceType == SourceType.LOCAL_HTML_ZIP, onClick = { update { it.copy(sourceType = SourceType.LOCAL_HTML_ZIP) } },
+                label = { Text("HTML Lokal (ZIP)") }, leadingIcon = { Icon(Icons.Rounded.FolderZip, null, Modifier.size(20.dp)) })
+        }
+        if (p.sourceType == SourceType.URL) {
+            LabeledField("URL target", p.targetUrl, { v -> update { it.copy(targetUrl = v.trim()) } }, error = e.url, mono = true, keyboardType = KeyboardType.Uri)
+        } else {
+            OutlinedButton(onClick = { zipPicker.launch(arrayOf("application/zip", "application/x-zip-compressed", "application/octet-stream")) }) {
+                Icon(Icons.Rounded.FolderZip, null, Modifier.size(20.dp)); Spacer(Modifier.width(8.dp))
+                Text(if (p.localZipPath == null) "Pilih ZIP (berisi index.html)" else "Ganti ZIP proyek web")
+            }
+            p.localZipPath?.let { Text("✓ ${File(it).name} (${FileActions.humanSize(File(it).length())})", style = MaterialTheme.typography.bodySmall) }
+            e.url?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
+        }
+        LabeledField("Domain internal tambahan", p.allowedDomains, { v -> update { it.copy(allowedDomains = v) } }, mono = true,
+            supporting = "Pisahkan dengan koma. Domain lain dibuka di browser eksternal.", placeholder = "auth.toko.com, cdn.toko.com")
+        LabeledField("Host Deep Link / App Links (opsional)", p.deepLinkHost, { v -> update { it.copy(deepLinkHost = v.trim()) } }, mono = true, placeholder = "toko.com")
+    }
+
+    SectionCard("Identitas Aplikasi", Icons.Rounded.Android) {
+        LabeledField("Nama aplikasi", p.appName, { v -> update { it.copy(appName = v) } })
+        LabeledField("Package name", p.packageName, { v -> update { it.copy(packageName = v.trim().lowercase()) } }, error = e.packageName, mono = true,
+            supporting = "Contoh: com.namatoko.app")
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            LabeledField("Version code", p.versionCode.toString(),
+                { v -> v.filter(Char::isDigit).take(9).toIntOrNull()?.let { n -> update { it.copy(versionCode = maxOf(1, n)) } } },
+                modifier = Modifier.weight(1f), keyboardType = KeyboardType.Number, mono = true)
+            LabeledField("Version name", p.versionName, { v -> update { it.copy(versionName = v.trim()) } },
+                modifier = Modifier.weight(1f), error = e.versionName, mono = true)
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            SelectField("minSdk", (21..30).toList(), p.minSdk, { "API $it" }, { v -> update { it.copy(minSdk = v) } }, Modifier.weight(1f))
+            SelectField("targetSdk", listOf(33, 34, 35), p.targetSdk, { "API $it" }, { v -> update { it.copy(targetSdk = v) } }, Modifier.weight(1f))
+        }
+    }
+
+    SectionCard("Ikon & Warna", Icons.Rounded.Brush) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            ProjectIcon(p, 72)
+            Spacer(Modifier.width(16.dp))
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                OutlinedButton(onClick = { iconPicker.launch("image/*") }) {
+                    Icon(Icons.Rounded.Image, null, Modifier.size(20.dp)); Spacer(Modifier.width(8.dp)); Text("Pilih ikon")
+                }
+                Text("PNG/JPG persegi ≥ 512 px. Otomatis di-resize 48–192 px + adaptive 108dp.",
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
+        ColorField("Latar ikon adaptif", p.adaptiveBgColor, { v -> update { it.copy(adaptiveBgColor = v) } }, e.colors["adaptiveBgColor"])
+        ColorField("Warna utama (primary)", p.primaryColorHex, { v -> update { it.copy(primaryColorHex = v) } }, e.colors["primaryColorHex"])
+        ColorField("Warna status bar", p.statusBarColorHex, { v -> update { it.copy(statusBarColorHex = v) } }, e.colors["statusBarColorHex"])
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            FilterChip(selected = p.statusBarStyle == StatusBarStyle.LIGHT_ICONS, onClick = { update { it.copy(statusBarStyle = StatusBarStyle.LIGHT_ICONS) } }, label = { Text("Ikon terang") })
+            FilterChip(selected = p.statusBarStyle == StatusBarStyle.DARK_ICONS, onClick = { update { it.copy(statusBarStyle = StatusBarStyle.DARK_ICONS) } }, label = { Text("Ikon gelap") })
+        }
+        ColorField("Warna navigation bar", p.navigationBarColorHex, { v -> update { it.copy(navigationBarColorHex = v) } }, e.colors["navigationBarColorHex"])
+        SelectField("Orientasi layar", ScreenOrientation.entries, p.screenOrientation,
+            { when (it) { ScreenOrientation.UNSPECIFIED -> "Otomatis"; ScreenOrientation.PORTRAIT -> "Potret"; ScreenOrientation.LANDSCAPE -> "Lanskap" } },
+            { v -> update { it.copy(screenOrientation = v) } })
+        SwitchRow("Mode layar penuh (Immersive)", p.fullscreenMode, { v -> update { it.copy(fullscreenMode = v) } },
+            "Sembunyikan status & navigation bar", Icons.Rounded.Wallpaper)
+    }
+}
+
+// ------------------------------------------------------------------ Tab 2
+@Composable
+private fun WebViewTab(p: WebProjectEntity, update: ((WebProjectEntity) -> WebProjectEntity) -> Unit) {
+    SectionCard("Engine WebView", Icons.Rounded.Code) {
+        SwitchRow("JavaScript", p.enableJavaScript, { v -> update { it.copy(enableJavaScript = v) } }, "Wajib untuk sebagian besar website & JS Bridge")
+        SwitchRow("DOM Storage", p.enableDomStorage, { v -> update { it.copy(enableDomStorage = v) } }, "localStorage / sessionStorage")
+        SwitchRow("Kontrol zoom", p.enableZoomControls, { v -> update { it.copy(enableZoomControls = v) } }, icon = Icons.Rounded.ZoomIn)
+        SwitchRow("Izinkan mixed content (HTTP)", p.allowMixedContent, { v -> update { it.copy(allowMixedContent = v) } }, "Tidak disarankan untuk produksi", Icons.Rounded.Warning)
+        SelectField("Mode cache", WebCacheMode.entries, p.cacheMode,
+            { when (it) { WebCacheMode.LOAD_DEFAULT -> "Default (ikuti header HTTP)"; WebCacheMode.LOAD_CACHE_ELSE_NETWORK -> "Cache dulu, lalu jaringan"; WebCacheMode.LOAD_NO_CACHE -> "Tanpa cache" } },
+            { v -> update { it.copy(cacheMode = v) } })
+        LabeledField("User-Agent kustom (opsional)", p.customUserAgent, { v -> update { it.copy(customUserAgent = v) } }, mono = true, singleLine = false,
+            supporting = "Kosong = UA bawaan + \"WebifyApp/versi\"")
+    }
+    SectionCard("Navigasi & Interaksi", Icons.Rounded.SwipeLeft) {
+        SwitchRow("Pull-to-refresh", p.enablePullToRefresh, { v -> update { it.copy(enablePullToRefresh = v) } }, icon = Icons.Rounded.Refresh)
+        SwitchRow("Swipe kiri/kanan untuk kembali/maju", p.enableSwipeBackForward, { v -> update { it.copy(enableSwipeBackForward = v) } }, icon = Icons.Rounded.SwipeLeft)
+        SwitchRow("Progress bar di atas", p.showTopProgressBar, { v -> update { it.copy(showTopProgressBar = v) } })
+        if (p.showTopProgressBar) ColorField("Warna progress bar", p.progressBarColorHex, { v -> update { it.copy(progressBarColorHex = v) } })
+        SwitchRow("Routing intent eksternal", p.enableExternalIntentRouting, { v -> update { it.copy(enableExternalIntentRouting = v) } },
+            "tel:, mailto:, whatsapp:, tg:, intent:, domain luar → aplikasi/browser", Icons.Rounded.OpenInBrowser)
+    }
+    SectionCard("Upload & Unduhan", Icons.Rounded.Download) {
+        SwitchRow("Upload file (galeri/kamera)", p.enableFileUploadChooser, { v -> update { it.copy(enableFileUploadChooser = v) } }, icon = Icons.Rounded.Upload)
+        SwitchRow("DownloadManager sistem", p.enableDownloadManager, { v -> update { it.copy(enableDownloadManager = v) } },
+            "Unduhan dengan notifikasi progres, termasuk blob: & data:", Icons.Rounded.Download)
+    }
+}
+
+// ------------------------------------------------------------------ Tab 3
+@Composable
+private fun SplashOfflineTab(p: WebProjectEntity, e: StudioErrors, update: ((WebProjectEntity) -> WebProjectEntity) -> Unit) {
+    SectionCard("Splash Screen", Icons.Rounded.Smartphone) {
+        SwitchRow("Aktifkan splash", p.enableSplash, { v -> update { it.copy(enableSplash = v) } })
+        if (p.enableSplash) {
+            ColorField("Warna latar splash", p.splashBgColorHex, { v -> update { it.copy(splashBgColorHex = v) } }, e.colors["splashBgColorHex"])
+            Text("Durasi minimum: ${p.splashDurationMs} ms", style = MaterialTheme.typography.labelLarge)
+            Slider(
+                value = p.splashDurationMs.toFloat(),
+                onValueChange = { v -> update { it.copy(splashDurationMs = (v / 100).toInt() * 100) } },
+                valueRange = 500f..5000f, steps = 44
+            )
+            SwitchRow("Tampilkan loader", p.splashShowLoader, { v -> update { it.copy(splashShowLoader = v) } })
+        }
+    }
+    SectionCard("Mode Offline", Icons.Rounded.CloudOff) {
+        OfflineModeType.entries.forEach { m ->
+            Row(
+                Modifier.fillMaxWidth().clickable { update { it.copy(offlineModeType = m) } }.padding(vertical = 4.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                RadioButton(selected = p.offlineModeType == m, onClick = { update { it.copy(offlineModeType = m) } })
+                Column {
+                    Text(
+                        when (m) { OfflineModeType.DEFAULT_MODERN -> "Halaman offline modern"; OfflineModeType.CUSTOM_HTML -> "HTML offline kustom"; OfflineModeType.CACHE_FIRST -> "Cache-first" },
+                        style = MaterialTheme.typography.bodyLarge
+                    )
+                    Text(
+                        when (m) {
+                            OfflineModeType.DEFAULT_MODERN -> "Tampilan bawaan dengan tombol \"Coba Lagi\""
+                            OfflineModeType.CUSTOM_HTML -> "Gunakan HTML Anda sendiri (link webify://retry untuk muat ulang)"
+                            OfflineModeType.CACHE_FIRST -> "Tampilkan versi cache saat offline, fallback ke halaman offline"
+                        },
+                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+        }
+        if (p.offlineModeType == OfflineModeType.CUSTOM_HTML) {
+            CodeEditor(
+                "HTML offline", p.customOfflineHtml, { v -> update { it.copy(customOfflineHtml = v) } },
+                placeholder = "<!DOCTYPE html>\n<html>…<a href=\"webify://retry\">Coba lagi</a>…</html>", minHeight = 220, language = "html"
+            )
+        }
+    }
+}
+
+// ------------------------------------------------------------------ Tab 4
+@Composable
+private fun PermissionsCodeTab(p: WebProjectEntity, update: ((WebProjectEntity) -> WebProjectEntity) -> Unit, onAskAi: (String) -> Unit) {
+    var aiInstruction by rememberSaveable { mutableStateOf("") }
+    SectionCard("Perizinan Native", Icons.Rounded.Security, "Hanya izin yang aktif yang ditulis ke AndroidManifest.xml") {
+        SwitchRow("Kamera", p.permCamera, { v -> update { it.copy(permCamera = v) } }, "Upload foto langsung & WebRTC video", Icons.Rounded.CameraAlt)
+        SwitchRow("Mikrofon", p.permMicrophone, { v -> update { it.copy(permMicrophone = v) } }, "WebRTC audio / rekam suara", Icons.Rounded.Mic)
+        SwitchRow("Lokasi (GPS)", p.permGeolocation, { v -> update { it.copy(permGeolocation = v) } }, "navigator.geolocation", Icons.Rounded.LocationOn)
+        SwitchRow("Notifikasi", p.permNotifications, { v -> update { it.copy(permNotifications = v) } }, "POST_NOTIFICATIONS (Android 13+)", Icons.Rounded.Notifications)
+        SwitchRow("Penyimpanan unduhan", p.permStorageDownloads, { v -> update { it.copy(permStorageDownloads = v) } }, "WRITE_EXTERNAL_STORAGE (≤ Android 9)", Icons.Rounded.Download)
+    }
+    SectionCard("Code Injection", Icons.Rounded.Code, "Diinjeksi ke setiap halaman internal") {
+        Surface(color = MaterialTheme.colorScheme.tertiaryContainer, shape = MaterialTheme.shapes.medium) {
+            Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("✨ Smart Injector — jelaskan perubahan yang diinginkan", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onTertiaryContainer)
+                OutlinedTextField(
+                    value = aiInstruction, onValueChange = { aiInstruction = it },
+                    placeholder = { Text("Sembunyikan banner iklan bawah & perbesar font") },
+                    modifier = Modifier.fillMaxWidth(), shape = MaterialTheme.shapes.medium
+                )
+                Button(
+                    onClick = { onAskAi(aiInstruction) }, enabled = aiInstruction.isNotBlank(),
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.tertiary, contentColor = MaterialTheme.colorScheme.onTertiary)
+                ) {
+                    Icon(Icons.Rounded.AutoAwesome, null, Modifier.size(20.dp)); Spacer(Modifier.width(8.dp)); Text("Buat dengan AI")
+                }
+            }
+        }
+        CodeEditor("Custom CSS", p.customCssCode, { v -> update { it.copy(customCssCode = v) } },
+            placeholder = ".ads-banner { display: none !important; }", language = "css")
+        CodeEditor("JavaScript • onPageStarted", p.customJsOnPageStart, { v -> update { it.copy(customJsOnPageStart = v) } },
+            placeholder = "// dijalankan saat halaman mulai dimuat", minHeight = 120, language = "js")
+        CodeEditor("JavaScript • onPageFinished", p.customJsOnPageFinished, { v -> update { it.copy(customJsOnPageFinished = v) } },
+            placeholder = "document.querySelector('header')?.remove();", language = "js")
+    }
+}
+
+// ------------------------------------------------------------------ Tab 5
+@Composable
+private fun BuildTab(
+    p: WebProjectEntity,
+    keystores: List<KeystoreEntity>,
+    builds: List<BuildRecordEntity>,
+    errors: StudioErrors,
+    update: ((WebProjectEntity) -> WebProjectEntity) -> Unit,
+    onBuild: (BuildType) -> Unit
+) {
+    var target by rememberSaveable { mutableStateOf(BuildType.APK_DEBUG) }
+    val selectedKs = keystores.firstOrNull { it.id == p.selectedKeystoreId }
+    val ctx = LocalContext.current
+    var exportFile by remember { mutableStateOf<File?>(null) }
+    val exporter = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/octet-stream")) { uri ->
+        val f = exportFile
+        if (uri != null && f != null) FileActions.toast(ctx, if (FileActions.exportTo(ctx, f, uri)) "Diekspor: ${f.name}" else "Ekspor gagal")
+        exportFile = null
+    }
+
+    SectionCard("Target Build", Icons.Rounded.RocketLaunch) {
+        BuildTargetOption(BuildType.APK_DEBUG, target, Icons.Rounded.Bolt, "Debug APK", "Cepat untuk uji coba, ditandatangani debug key") { target = it }
+        BuildTargetOption(BuildType.APK_RELEASE, target, Icons.Rounded.InstallMobile, "Release APK", "Teroptimasi (D8 release), untuk distribusi langsung") { target = it }
+        BuildTargetOption(BuildType.AAB_PLAYSTORE, target, Icons.Rounded.Shop, "Play Store AAB", "Android App Bundle siap unggah ke Google Play Console") { target = it }
+    }
+
+    if (target != BuildType.APK_DEBUG) {
+        SectionCard("Keystore Penandatanganan", Icons.Rounded.Security) {
+            val options: List<KeystoreEntity?> = listOf<KeystoreEntity?>(null) + keystores.filter { !it.isDebugDefault }
+            SelectField("Keystore", options, selectedKs, { it?.let { k -> "${k.name} (${k.keyAlias})" } ?: "Debug key (bawaan)" },
+                { k -> update { it.copy(selectedKeystoreId = k?.id) } })
+            if (selectedKs == null) {
+                Text(
+                    if (target == BuildType.AAB_PLAYSTORE) "⚠ Google Play menolak AAB bertanda tangan debug. Buat keystore rilis di tab Keystore."
+                    else "Tanpa keystore rilis, APK ditandatangani debug key.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = if (target == BuildType.AAB_PLAYSTORE) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            } else {
+                Text("SHA-256", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(selectedKs.sha256Fingerprint, style = WebifyTheme.mono.copy(fontSize = MaterialTheme.typography.labelSmall.fontSize))
+            }
+        }
+    }
+
+    if (errors.hasErrors) {
+        Surface(color = MaterialTheme.colorScheme.errorContainer, shape = MaterialTheme.shapes.medium) {
+            Text(
+                listOfNotNull(errors.packageName?.let { "Package: $it" }, errors.url?.let { "Sumber: $it" }, errors.versionName?.let { "Versi: $it" },
+                    errors.colors.keys.takeIf { it.isNotEmpty() }?.let { "Warna tidak valid: ${it.joinToString()}" }).joinToString("\n"),
+                modifier = Modifier.padding(12.dp), style = MaterialTheme.typography.bodySmall
+            )
+        }
+    }
+
+    Button(
+        onClick = { onBuild(target) },
+        modifier = Modifier.fillMaxWidth().height(60.dp),
+        shape = MaterialTheme.shapes.large,
+        enabled = !errors.hasErrors
+    ) {
+        Icon(Icons.Rounded.PlayArrow, null)
+        Spacer(Modifier.width(10.dp))
+        Text("Start Local Build", style = MaterialTheme.typography.titleMedium)
+    }
+    OutlinedButton(
+        onClick = { onBuild(BuildType.APK_DEBUG) },
+        modifier = Modifier.fillMaxWidth(),
+        enabled = !errors.hasErrors
+    ) {
+        Icon(Icons.Rounded.Bolt, null, Modifier.size(20.dp)); Spacer(Modifier.width(8.dp)); Text("Quick Build & Test (Debug Key)")
+    }
+
+    SectionCard("Riwayat Build", Icons.Rounded.Refresh) {
+        if (builds.isEmpty()) {
+            Text("Belum ada build untuk proyek ini.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        builds.take(15).forEach { b ->
+            BuildRecordRow(b,
+                onInstall = { FileActions.installApk(ctx, File(b.outputFilePath!!)) },
+                onShare = { FileActions.share(ctx, File(b.outputFilePath!!)) },
+                onExport = { exportFile = File(b.outputFilePath!!); exporter.launch(File(b.outputFilePath!!).name) }
+            )
+        }
+    }
+}
+
+@Composable
+private fun BuildTargetOption(type: BuildType, selected: BuildType, icon: ImageVector, title: String, subtitle: String, onSelect: (BuildType) -> Unit) {
+    val isSel = type == selected
+    Surface(
+        onClick = { onSelect(type) },
+        shape = MaterialTheme.shapes.medium,
+        color = if (isSel) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainer,
+        border = if (isSel) BorderStroke(1.5.dp, MaterialTheme.colorScheme.primary) else null
+    ) {
+        Row(Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+            Icon(icon, null, tint = if (isSel) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
+            Spacer(Modifier.width(12.dp))
+            Column(Modifier.weight(1f)) {
+                Text(title, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+                Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            RadioButton(selected = isSel, onClick = { onSelect(type) })
+        }
+    }
+}
+
+@Composable
+private fun BuildRecordRow(b: BuildRecordEntity, onInstall: () -> Unit, onShare: () -> Unit, onExport: () -> Unit) {
+    val ok = b.status == BuildStatus.SUCCESS
+    val exists = b.outputFilePath != null && File(b.outputFilePath).exists()
+    Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+        Icon(if (ok) Icons.Rounded.CheckCircle else Icons.Rounded.Error, null,
+            tint = if (ok) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.error, modifier = Modifier.size(20.dp))
+        Spacer(Modifier.width(10.dp))
+        Column(Modifier.weight(1f)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(b.buildType.label, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
+                Spacer(Modifier.width(6.dp))
+                if (ok) Pill(FileActions.humanSize(b.fileSizeBytes), MaterialTheme.colorScheme.surfaceContainer, MaterialTheme.colorScheme.onSurfaceVariant, mono = true)
+            }
+            Text(
+                DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT).format(Date(b.timestamp)) + " • " + "%.1f s".format(b.durationMs / 1000.0) +
+                    (b.errorSummary?.let { " • $it" } ?: ""),
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2, overflow = TextOverflow.Ellipsis
+            )
+        }
+        if (ok && exists) {
+            if (b.buildType != BuildType.AAB_PLAYSTORE) IconButton(onClick = onInstall) { Icon(Icons.Rounded.InstallMobile, "Install", Modifier.size(20.dp)) }
+            IconButton(onClick = onShare) { Icon(Icons.Rounded.Share, "Bagikan", Modifier.size(20.dp)) }
+            IconButton(onClick = onExport) { Icon(Icons.Rounded.Download, "Ekspor", Modifier.size(20.dp)) }
+        }
+    }
+}
+
+// ------------------------------------------------------------------ Picker (tab Studio tanpa proyek aktif)
+@Composable
+fun StudioPickerScreen(container: AppContainer, onOpenProject: (String) -> Unit) {
+    val projects by container.projectRepository.observeAll().collectAsStateWithLifecycle(initialValue = null)
+    Scaffold(containerColor = MaterialTheme.colorScheme.background) { pad ->
+        val list = projects
+        when {
+            list == null -> Box(Modifier.fillMaxSize().padding(pad), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
+            list.isEmpty() -> Box(Modifier.fillMaxSize().padding(pad), contentAlignment = Alignment.Center) {
+                EmptyState(Icons.Rounded.Code, "Builder Studio", "Buat proyek di tab Projects untuk mulai mengedit.")
+            }
+            else -> LazyColumn(
+                Modifier.fillMaxSize().padding(pad),
+                contentPadding = PaddingValues(16.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                item {
+                    Text("Builder Studio", style = MaterialTheme.typography.headlineMedium)
+                    Text("Pilih proyek untuk dibuka", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Spacer(Modifier.height(8.dp))
+                }
+                items(list, key = { it.id }) { p ->
+                    Surface(
+                        onClick = { onOpenProject(p.id) },
+                        shape = MaterialTheme.shapes.large,
+                        color = MaterialTheme.colorScheme.surface,
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+                        modifier = Modifier.fillMaxWidth().widthIn(max = 720.dp)
+                    ) {
+                        Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
+                            ProjectIcon(p, 40)
+                            Spacer(Modifier.width(12.dp))
+                            Column(Modifier.weight(1f)) {
+                                Text(p.appName, style = MaterialTheme.typography.titleSmall)
+                                Text(p.packageName, style = WebifyTheme.mono.copy(fontSize = MaterialTheme.typography.bodySmall.fontSize),
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                            Pill("v${p.versionName}", MaterialTheme.colorScheme.primaryContainer, MaterialTheme.colorScheme.onPrimaryContainer, mono = true)
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

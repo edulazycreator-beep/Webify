@@ -1,0 +1,23 @@
+# Gradle / Android Studio
+.gradle/
+build/
+/app/build/
+local.properties
+.idea/
+*.iml
+.DS_Store
+captures/
+.externalNativeBuild/
+.cxx/
+.kotlin/
+
+# Aset toolchain besar — diunduh oleh scripts/prepare_toolchain.sh
+/app/src/main/jniLibs/
+/app/src/main/assets/android.jar
+
+# Rahasia signing
+keystore.properties
+*.jks
+*.keystore
+*.p12
+!app/src/main/assets/**
